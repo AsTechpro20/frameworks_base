@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: 2023-2024 the risingOS Android Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+
+    <!-- Island notification -->
+    <dimen name="island_icon_size">48dp</dimen>
+    <dimen name="island_side_margin">12dp</dimen>
+
+    <!-- The height of the WiFi toggle layout in Internet panel -->
+    <dimen name="internet_dialog_wifi_toggle_height">56dp</dimen>
+    
+    <!-- Height of the landscape battery icon in the status bar. -->
+    <dimen name="status_bar_battery_icon_height_landscape">10.5dp</dimen>
+
+    <!-- Width of the landscape battery icon in the status bar. -->
+    <dimen name="status_bar_battery_icon_width_landscape">20dp</dimen>
+    
+    <!-- Additional gesture navbar lengths -->
+    <dimen name="navigation_home_handle_width_short">72dp</dimen>
+    <dimen name="navigation_home_handle_width_long">140dp</dimen>
+    
+    <!-- Udfps fingerprint animation -->
+    <dimen name="udfps_animation_size">280dp</dimen>
+    <dimen name="udfps_animation_offset">0dp</dimen>
+    
+    <!-- Lockscreen Clock/AOD -->  
+    <dimen name="custom_aod_image_size">180dp</dimen>
+    <dimen name="custom_clock_frame_margin_top">0dp</dimen>
+    <dimen name="keyguard_status_area_margin_top">0dp</dimen>
+    
+    <!-- Weather -->  
+    <dimen name="weather_image_max_size">24dp</dimen>
+    
+    <!-- Face unlock indicator -->
+    <dimen name="face_unlock_indicator_padding_vertical">12dp</dimen>
+    <dimen name="face_unlock_indicator_padding_start">12dp</dimen>
+    <dimen name="face_unlock_indicator_padding_end">22dp</dimen>
+    <dimen name="face_unlock_indicator_min_width">0dp</dimen>
+    <dimen name="face_unlock_indicator_text_size">13sp</dimen>
+    <dimen name="face_unlock_indicator_icon_size">18dp</dimen>
+    <dimen name="face_unlock_indicator_icon_padding">9dp</dimen>
+    
+    <!-- HD calling icon -->
+    <dimen name="signal_icon_viewport_size">24dp</dimen>
+    
+    <!-- OmniStyle custom headers -->
+    <dimen name="qs_header_image_height">142dp</dimen>
+    <dimen name="qs_header_image_fade_size">80dp</dimen>
+
+    <!-- QQS Brightness slider -->
+    <dimen name="qqs_top_brightness_margin_top">4dp</dimen>
+    <dimen name="qqs_top_brightness_margin_bottom">8dp</dimen>
+    <dimen name="qqs_bottom_brightness_margin_top">8dp</dimen>
+    <dimen name="qqs_bottom_brightness_margin_bottom">4dp</dimen>
+
+    <!-- QS Brightness slider -->
+    <dimen name="qs_top_brightness_margin_top">4dp</dimen>
+    <dimen name="qs_top_brightness_margin_bottom">8dp</dimen>
+    <dimen name="qs_bottom_brightness_margin_top">0dp</dimen>
+    <dimen name="qs_bottom_brightness_margin_bottom">16dp</dimen>
+
+    <!-- QS A11 Style -->
+    <dimen name="custom_qs_panel_padding_top">0dp</dimen>
+
+    <!-- Sb Chip -->
+    <dimen name="chip_corner_radius">28dp</dimen>
+    <dimen name="status_bar_clock_chip_tb_padding">0dp</dimen>
+    <dimen name="status_bar_clock_chip_lr_padding">8dp</dimen>
+    
+    <!-- Peek Display -->
+    <dimen name="peek_display_notification_icon_size_minimal">24dp</dimen>
+    <dimen name="peek_display_notification_icon_size">52dp</dimen>
+    <dimen name="peek_display_notification_icon_margin_end">16dp</dimen>
+    <dimen name="peek_notification_icon_corner_radius">100dp</dimen>
+    <dimen name="peek_notification_icon_padding">16dp</dimen>
+    <dimen name="peek_display_area_margin_top">64dp</dimen>
+    <dimen name="peek_notification_card_height">132dp</dimen>
+
+    <!-- Now bar -->
+    <dimen name="nowbar_album_art_size">48dp</dimen>
+    <dimen name="nowbar_media_buttons_size">28dp</dimen>
+    <dimen name="nowbar_height">72dp</dimen>
+    <dimen name="nowbar_width">260dp</dimen>
+    <dimen name="nowbar_margin_bottom">18dp</dimen>
+    
+    <!-- Maximum vertical offset of statusbar for burn-in protection -->
+    <dimen name="status_bar_offset_max_y">4dp</dimen>
+
+    <!-- Maximum horizontal offset of navigation bar for burn-in protection -->
+    <dimen name="navigation_bar_burn_in_offset_max_x">5dp</dimen>
+
+    <!-- Maximum vertical offset of navigation bar for burn-in protection -->
+    <dimen name="navigation_bar_burn_in_offset_max_y">8dp</dimen>
+
+    <!-- Tri-state UI -->
+    <dimen name="tri_state_down_dialog_position">850.0px</dimen>
+    <dimen name="tri_state_down_dialog_position_l">650.0px</dimen>
+    <dimen name="tri_state_middle_dialog_position">650.0px</dimen>
+    <dimen name="tri_state_middle_dialog_position_l">650.0px</dimen>
+    <dimen name="tri_state_up_dialog_position">450.0px</dimen>
+    <dimen name="tri_state_up_dialog_position_l">650.0px</dimen>
+    <dimen name="tri_state_up_dialog_position_deep">21.0px</dimen>
+    <dimen name="tri_state_up_dialog_position_deep_land">21.0px</dimen>
+    <dimen name="tri_state_dialog_elevation">4.0dip</dimen>
+    <dimen name="tri_state_dialog_icon_size">24.0dip</dimen>
+    <dimen name="tri_state_dialog_padding">8.0dip</dimen>
+    <dimen name="tri_state_mid_bottom_left_radius">24.0dip</dimen>
+    <dimen name="tri_state_mid_bottom_right_radius">24.0dip</dimen>
+    <dimen name="tri_state_mid_top_left_radius">24.0dip</dimen>
+    <dimen name="tri_state_mid_top_right_radius">24.0dip</dimen>
+    <dimen name="left_tri_state_down_bottom_left_radius">24.0dip</dimen>
+    <dimen name="left_tri_state_down_bottom_right_radius">24.0dip</dimen>
+    <dimen name="left_tri_state_down_top_left_radius">0.0dip</dimen>
+    <dimen name="left_tri_state_down_top_right_radius">24.0dip</dimen>
+    <dimen name="left_tri_state_up_bottom_left_radius">0.0dip</dimen>
+    <dimen name="left_tri_state_up_bottom_right_radius">24.0dip</dimen>
+    <dimen name="left_tri_state_up_top_left_radius">24.0dip</dimen>
+    <dimen name="left_tri_state_up_top_right_radius">24.0dip</dimen>
+    <dimen name="right_tri_state_down_bottom_left_radius">24.0dip</dimen>
+    <dimen name="right_tri_state_down_bottom_right_radius">24.0dip</dimen>
+    <dimen name="right_tri_state_down_top_left_radius">24.0dip</dimen>
+    <dimen name="right_tri_state_down_top_right_radius">0.0dip</dimen>
+    <dimen name="right_tri_state_up_bottom_left_radius">24.0dip</dimen>
+    <dimen name="right_tri_state_up_bottom_right_radius">0.0dip</dimen>
+    <dimen name="right_tri_state_up_top_left_radius">24.0dip</dimen>
+    <dimen name="right_tri_state_up_top_right_radius">24.0dip</dimen>
+
+    <!-- QS Widgets -->  
+    <dimen name="qs_controls_padding_top">260dp</dimen>
+    <dimen name="qs_controls_top_margin">16dp</dimen>
+    <dimen name="qs_controls_tile_height">150dp</dimen>
+    <dimen name="qs_controls_tile_margin_end">12dp</dimen>
+    <dimen name="qqs_header_offset_top">48dp</dimen>
+    <dimen name="qqs_control_header_height">240dp</dimen>
+    <dimen name="qs_controls_margin_bottom">16dp</dimen>
+    <dimen name="qs_controls_container_radius">20dp</dimen>
+    <dimen name="qs_controls_tile_size">24dp</dimen>
+    <dimen name="qs_controls_avatar_size">48dp</dimen>
+    <dimen name="qs_controls_circle_size">56dp</dimen>
+    <dimen name="qs_controls_corner_radius">15dp</dimen>
+    <dimen name="qs_controls_corner_radius_full">100dp</dimen>
+    <dimen name="qs_controls_tile_icon_padding">18dp</dimen>
+    <dimen name="qs_controls_tile_top_margin">12dp</dimen>
+    <dimen name="qs_controls_tile_bottom_margin">12dp</dimen>
+    <dimen name="qs_controls_tile_icon_margin_start">18dp</dimen>
+    <dimen name="qs_controls_tile_icon_margin_end">18dp</dimen>
+    <dimen name="qs_controls_slider_container_margin_end">0dp</dimen>
+    <dimen name="qs_controls_slider_margin_start">12dp</dimen>
+    <dimen name="qs_controls_slider_margin_end">12dp</dimen>
+    <dimen name="qs_controls_center_height">170dp</dimen>
+    <dimen name="qs_controls_slider_width">20dp</dimen>
+    <dimen name="qs_controls_slider_corner_radius">15dp</dimen>
+    <dimen name="qs_controls_slider_margin_top">10dp</dimen>
+    <dimen name="qs_controls_slider_margin_bottom">10dp</dimen>
+    <dimen name="qs_controls_slider_icon_margin_bottom">16dp</dimen>
+    <dimen name="qs_controls_page_indicator_size">6dp</dimen>
+    <dimen name="qs_controls_page_indicator_margin">2dp</dimen>
+    <dimen name="qs_controls_translucent_alpha">0.275</dimen>
+    <dimen name="qs_slider_swipe_threshold_dp">40dp</dimen>
+</resources>

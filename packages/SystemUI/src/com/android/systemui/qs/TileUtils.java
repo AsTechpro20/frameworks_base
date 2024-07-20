@@ -128,4 +128,30 @@ public class TileUtils {
                 Settings.System.QS_TILE_UI_STYLE,
                 0, UserHandle.USER_CURRENT);
    }
+<<<<<<< HEAD
+=======
+   
+   public static boolean isCompactQSMediaPlayerEnforced(Context context) {
+        return Settings.System.getIntForUser(context.getContentResolver(), 
+            "qs_compact_media_player_mode",0, UserHandle.USER_CURRENT) != 0;
+   }
+   
+   public static boolean canShowSplitShade(Context context) {
+        return Settings.System.getIntForUser(context.getContentResolver(), 
+            "qs_split_shade_enabled",0, UserHandle.USER_CURRENT) != 0
+            && context.getResources().getConfiguration().orientation 
+            == Configuration.ORIENTATION_LANDSCAPE;
+   }
+
+   public static boolean isQsWidgetsEnabled(Context context) {
+        return Settings.System.getIntForUser(context.getContentResolver(), 
+            "qs_widgets_enabled",0, UserHandle.USER_CURRENT) != 0;
+   }
+
+   public static boolean canShowQsWidgets(Context context) {
+        return isQsWidgetsEnabled(context)
+            && context.getResources().getConfiguration().orientation 
+            != Configuration.ORIENTATION_LANDSCAPE;
+   }
+>>>>>>> 233de1b8e678 (SystemUI: RE-Introduce QS Widgets)
 }
