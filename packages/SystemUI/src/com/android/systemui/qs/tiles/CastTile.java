@@ -26,7 +26,6 @@ import android.content.Intent;
 import android.media.MediaRouter.RouteInfo;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemProperties;
 import android.provider.Settings;
 import android.service.quicksettings.Tile;
 import android.util.Log;
@@ -61,7 +60,7 @@ import com.android.systemui.statusbar.phone.SystemUIDialog;
 import com.android.systemui.statusbar.pipeline.shared.data.model.DefaultConnectionModel;
 import com.android.systemui.statusbar.pipeline.shared.data.repository.ConnectivityRepository;
 import com.android.systemui.statusbar.policy.CastController;
-import com.android.systemui.statusbar.policy.CastController.CastDevice;
+import com.android.systemui.statusbar.policy.CastDevice;
 import com.android.systemui.statusbar.policy.HotspotController;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.util.DialogKt;
@@ -90,8 +89,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
     private final TileJavaAdapter mJavaAdapter;
     private final FeatureFlags mFeatureFlags;
     private boolean mCastTransportAllowed;
-    private boolean mHotspotConnected;
-    private static final String WFD_ENABLE = "persist.debug.wfd.enable";
+    private boolean mHotspotEnabled;
 
     @Inject
     public CastTile(
@@ -189,14 +187,13 @@ public class CastTile extends QSTileImpl<BooleanState> {
     // case where multiple devices were active :-/.
     private boolean willPopDialog() {
         List<CastDevice> activeDevices = getActiveDevices();
-        return activeDevices.isEmpty() || (activeDevices.get(0).tag instanceof RouteInfo);
+        return activeDevices.isEmpty() || (activeDevices.get(0).getTag() instanceof RouteInfo);
     }
 
     private List<CastDevice> getActiveDevices() {
         ArrayList<CastDevice> activeDevices = new ArrayList<>();
         for (CastDevice device : mController.getCastDevices()) {
-            if (device.state == CastDevice.STATE_CONNECTED
-                    || device.state == CastDevice.STATE_CONNECTING) {
+            if (device.isCasting()) {
                 activeDevices.add(device);
             }
         }
@@ -272,7 +269,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
         // We always choose the first device that's in the CONNECTED state in the case where
         // multiple devices are CONNECTED at the same time.
         for (CastDevice device : devices) {
-            if (device.state == CastDevice.STATE_CONNECTED) {
+            if (device.getState() == CastDevice.CastState.Connected) {
                 state.value = true;
                 state.secondaryLabel = getDeviceName(device);
                 state.stateDescription = state.stateDescription + ","
@@ -280,7 +277,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
                         R.string.accessibility_cast_name, state.label);
                 connecting = false;
                 break;
-            } else if (device.state == CastDevice.STATE_CONNECTING) {
+            } else if (device.getState() == CastDevice.CastState.Connecting) {
                 connecting = true;
             }
         }
@@ -311,28 +308,28 @@ public class CastTile extends QSTileImpl<BooleanState> {
     }
 
     private String getDeviceName(CastDevice device) {
-        return device.name != null ? device.name
+        return device.getName() != null ? device.getName()
                 : mContext.getString(R.string.quick_settings_cast_device_default_name);
     }
 
     private boolean canCastToNetwork() {
-        return mCastTransportAllowed || mHotspotConnected;
+        return mCastTransportAllowed || mHotspotEnabled;
     }
 
-    private void setCastTransportAllowed(boolean connected) {
-        if (connected != mCastTransportAllowed) {
-            mCastTransportAllowed = connected;
-            // Hotspot is not connected, so changes here should update
-            if (!mHotspotConnected) {
+    private void setCastTransportAllowed(boolean enabled) {
+        if (enabled != mCastTransportAllowed) {
+            mCastTransportAllowed = enabled;
+            // Hotspot is not enabled, so changes here should update
+            if (!mHotspotEnabled) {
                 refreshState();
             }
         }
     }
 
-    private void setHotspotConnected(boolean connected) {
-        if (connected != mHotspotConnected) {
-            mHotspotConnected = connected;
-            // Wifi is not connected, so changes here should update
+    private void setHotspotEnabled(boolean enabled) {
+        if (enabled != mHotspotEnabled) {
+            mHotspotEnabled = enabled;
+            // Wifi is not enabled, so changes here should update
             if (!mCastTransportAllowed) {
                 refreshState();
             }
@@ -349,17 +346,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
     private final SignalCallback mSignalCallback = new SignalCallback() {
         @Override
         public void setWifiIndicators(@NonNull WifiIndicators indicators) {
-            // statusIcon.visible has the connected status information
-            if(SystemProperties.getBoolean(WFD_ENABLE, false)) {
-                if(indicators.enabled != mCastTransportAllowed) {
-                    mCastTransportAllowed = indicators.enabled;
-                    refreshState();
-                }
-            } else {
-                boolean enabledAndConnected = indicators.enabled
-                        && (indicators.qsIcon != null && indicators.qsIcon.visible);
-                setCastTransportAllowed(enabledAndConnected);
-            }
+            setCastTransportAllowed(indicators.enabled);
         }
     };
 
@@ -367,8 +354,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
             new HotspotController.Callback() {
                 @Override
                 public void onHotspotChanged(boolean enabled, int numDevices) {
-                    boolean enabledAndConnected = enabled && numDevices > 0;
-                    setHotspotConnected(enabledAndConnected);
+                    setHotspotEnabled(enabled);
                 }
             };
 

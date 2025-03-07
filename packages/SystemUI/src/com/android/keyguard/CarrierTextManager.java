@@ -14,15 +14,10 @@
  * limitations under the License.
  */
 
-/**
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.keyguard;
 
 import static com.android.keyguard.logging.CarrierTextManagerLogger.REASON_ACTIVE_DATA_SUB_CHANGED;
+import static com.android.keyguard.logging.CarrierTextManagerLogger.REASON_CARRIER_ON_LOCKSCREEN_CHANGED;
 import static com.android.keyguard.logging.CarrierTextManagerLogger.REASON_ON_TELEPHONY_CAPABLE;
 import static com.android.keyguard.logging.CarrierTextManagerLogger.REASON_REFRESH_CARRIER_INFO;
 import static com.android.keyguard.logging.CarrierTextManagerLogger.REASON_SATELLITE_CHANGED;
@@ -33,7 +28,12 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
+import android.database.ContentObserver;
+import android.net.Uri;
+import android.os.Handler;
 import android.os.Trace;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.TelephonyCallback.ActiveDataSubscriptionIdListener;
@@ -52,9 +52,7 @@ import com.android.systemui.keyguard.WakefulnessLifecycle;
 import com.android.systemui.res.R;
 import com.android.systemui.statusbar.pipeline.satellite.ui.viewmodel.DeviceBasedSatelliteViewModel;
 import com.android.systemui.statusbar.pipeline.wifi.data.repository.WifiRepository;
-import com.android.systemui.statusbar.policy.FiveGServiceClient;
 import com.android.systemui.telephony.TelephonyListenerManager;
-import com.android.systemui.util.CarrierNameCustomization;
 import com.android.systemui.util.kotlin.JavaAdapter;
 
 import kotlinx.coroutines.Job;
@@ -102,6 +100,8 @@ public class CarrierTextManager {
 
     @Nullable private String mSatelliteCarrierText;
 
+    private boolean mShowCarrierText = true;
+
     private final Context mContext;
     private final TelephonyManager mTelephonyManager;
     private final CharSequence mSeparator;
@@ -121,8 +121,7 @@ public class CarrierTextManager {
                     if (callback != null) callback.startedGoingToSleep();
                 }
             };
-    private FiveGServiceClient mFiveGServiceClient;
-    private CarrierNameCustomization mCarrierNameCustomization;
+
     @VisibleForTesting
     protected final KeyguardUpdateMonitorCallback mCallback = new KeyguardUpdateMonitorCallback() {
         @Override
@@ -208,8 +207,8 @@ public class CarrierTextManager {
             @Main Executor mainExecutor,
             @Background Executor bgExecutor,
             KeyguardUpdateMonitor keyguardUpdateMonitor,
-            CarrierTextManagerLogger logger,
-            CarrierNameCustomization carrierNameCustomization) {
+            CarrierTextManagerLogger logger) {
+
         mContext = context;
         mIsEmergencyCallCapable = telephonyManager.isVoiceCapable();
 
@@ -240,7 +239,8 @@ public class CarrierTextManager {
                 });
             }
         });
-        mCarrierNameCustomization = carrierNameCustomization;
+        SettingsObserver observer = new SettingsObserver();
+        observer.observe();
     }
 
     private TelephonyManager getTelephonyManager() {
@@ -307,7 +307,6 @@ public class CarrierTextManager {
                 // Keyguard update monitor expects callbacks from main thread
                 mMainExecutor.execute(() -> {
                     mWakefulnessLifecycle.addObserver(mWakefulnessObserver);
-                    mCarrierNameCustomization.registerCallback(mCallback);
                 });
                 mTelephonyListenerManager.addActiveDataSubscriptionIdListener(mPhoneStateListener);
                 cancelSatelliteCollectionJob(/* reason= */ "Starting new job");
@@ -332,7 +331,6 @@ public class CarrierTextManager {
             mCarrierTextCallback = null;
             mMainExecutor.execute(() -> {
                 mWakefulnessLifecycle.removeObserver(mWakefulnessObserver);
-                mCarrierNameCustomization.removeCallback(mCallback);
             });
             mTelephonyListenerManager.removeActiveDataSubscriptionIdListener(mPhoneStateListener);
             cancelSatelliteCollectionJob(/* reason= */ "#handleSetListening has null callback");
@@ -360,19 +358,15 @@ public class CarrierTextManager {
         updateCarrierText();
     }
 
-    public void updateCarrierText() {
+    protected void updateCarrierText() {
         Trace.beginSection("CarrierTextManager#updateCarrierText");
         boolean allSimsMissing = true;
         boolean anySimReadyAndInService = false;
-        boolean missingSimsWithSubs = false;
-        boolean showCustomizeName = getContext().getResources().getBoolean(
-                com.android.settingslib.R.bool.config_show_customize_carrier_name);
         CharSequence displayText = null;
         List<SubscriptionInfo> subs = getSubscriptionInfo();
 
         final int numSubs = subs.size();
         final int[] subsIds = new int[numSubs];
-        if (DEBUG) Log.d(TAG, "updateCarrierText(): " + numSubs);
         // This array will contain in position i, the index of subscription in slot ID i.
         // -1 if no subscription in that slot
         final int[] subOrderBySlot = new int[mSimSlotsNumber];
@@ -389,15 +383,6 @@ public class CarrierTextManager {
             subOrderBySlot[subs.get(i).getSimSlotIndex()] = i;
             int simState = mKeyguardUpdateMonitor.getSimState(subId);
             CharSequence carrierName = subs.get(i).getCarrierName();
-            if (showCustomizeName) {
-                if (mCarrierNameCustomization.isRoamingCustomizationEnabled()
-                        && mCarrierNameCustomization.isRoaming(subId)) {
-                    carrierName = mCarrierNameCustomization.getRoamingCarrierName(subId);
-                } else {
-                    carrierName = mCarrierNameCustomization.
-                            getCustomizeCarrierNameOld(carrierName, subs.get(i));
-                }
-            }
             CharSequence carrierTextForSimState = getCarrierTextForSimState(simState, carrierName);
             mLogger.logUpdateLoopStart(subId, simState, String.valueOf(carrierName));
             if (carrierTextForSimState != null) {
@@ -450,7 +435,8 @@ public class CarrierTextManager {
                         plmn = i.getStringExtra(TelephonyManager.EXTRA_PLMN);
                     }
                     mLogger.logUpdateFromStickyBroadcast(plmn, spn);
-                    if (Objects.equals(plmn, spn)) {
+                    if (plmn != null && spn != null
+                            && plmn.toLowerCase().contains(spn.toLowerCase())) {
                         text = plmn;
                     } else {
                         text = concatenate(plmn, spn, mSeparator);
@@ -480,6 +466,12 @@ public class CarrierTextManager {
         }
 
         boolean isInSatelliteMode = mSatelliteCarrierText != null;
+
+        // Hide the carrier text if the user requests
+        if (!mShowCarrierText) {
+            displayText = "";
+        }
+
         final CarrierTextCallbackInfo info = new CarrierTextCallbackInfo(
                 displayText,
                 carrierNames,
@@ -631,7 +623,6 @@ public class CarrierTextManager {
                 return CarrierTextManager.StatusMode.SimLocked;
             case TelephonyManager.SIM_STATE_PUK_REQUIRED:
                 return CarrierTextManager.StatusMode.SimPukLocked;
-            case TelephonyManager.SIM_STATE_LOADED:
             case TelephonyManager.SIM_STATE_READY:
                 return CarrierTextManager.StatusMode.Normal;
             case TelephonyManager.SIM_STATE_PERM_DISABLED:
@@ -695,6 +686,33 @@ public class CarrierTextManager {
         }
     }
 
+    private class SettingsObserver extends ContentObserver {
+        SettingsObserver() {
+            super(new Handler());
+        }
+
+        void observe() {
+            mContext.getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.LOCKSCREEN_SHOW_CARRIER), false, this,
+                    UserHandle.USER_ALL);
+            updateSettings();
+        }
+
+        void updateSettings() {
+            mShowCarrierText = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.LOCKSCREEN_SHOW_CARRIER, 1, UserHandle.USER_CURRENT) != 0;
+        }
+
+        @Override
+        public void onChange(boolean selfChange, Uri uri) {
+            if (Settings.System.getUriFor(Settings.System.LOCKSCREEN_SHOW_CARRIER).equals(uri)) {
+                mLogger.logUpdateCarrierTextForReason(REASON_CARRIER_ON_LOCKSCREEN_CHANGED);
+                updateSettings();
+                updateCarrierText();
+            }
+        }
+    }
+
     /** Injectable Buildeer for {@#link CarrierTextManager}. */
     public static class Builder {
         private final Context mContext;
@@ -712,7 +730,6 @@ public class CarrierTextManager {
         private boolean mShowAirplaneMode;
         private boolean mShowMissingSim;
         private String mDebugLocation;
-        private CarrierNameCustomization mCarrierNameCustomization;
 
         @Inject
         public Builder(
@@ -727,8 +744,7 @@ public class CarrierTextManager {
                 @Main Executor mainExecutor,
                 @Background Executor bgExecutor,
                 KeyguardUpdateMonitor keyguardUpdateMonitor,
-                CarrierTextManagerLogger logger,
-                CarrierNameCustomization carrierNameCustomization) {
+                CarrierTextManagerLogger logger) {
             mContext = context;
             mSeparator = resources.getString(
                     com.android.internal.R.string.kg_text_message_separator);
@@ -742,7 +758,6 @@ public class CarrierTextManager {
             mBgExecutor = bgExecutor;
             mKeyguardUpdateMonitor = keyguardUpdateMonitor;
             mLogger = logger;
-            mCarrierNameCustomization = carrierNameCustomization;
         }
 
         /** */
@@ -783,8 +798,7 @@ public class CarrierTextManager {
                     mMainExecutor,
                     mBgExecutor,
                     mKeyguardUpdateMonitor,
-                    mLogger,
-                    mCarrierNameCustomization);
+                    mLogger);
         }
     }
 
@@ -859,9 +873,5 @@ public class CarrierTextManager {
          * Notifies the View that the device finished waking up
          */
         default void finishedWakingUp() {};
-    }
-
-    public void loadCarrierMap() {
-        mCarrierNameCustomization.loadCarrierMap(getContext());
     }
 }

@@ -41,10 +41,12 @@ import com.android.systemui.Dumpable;
 import com.android.systemui.animation.ActivityTransitionAnimator;
 import com.android.systemui.animation.RemoteAnimationRunnerCompat;
 import com.android.systemui.display.data.repository.DisplayMetricsRepository;
-import com.android.systemui.navigationbar.NavigationBarView;
+import com.android.systemui.navigationbar.views.NavigationBarView;
 import com.android.systemui.plugins.ActivityStarter.OnDismissAction;
 import com.android.systemui.qs.QSPanelController;
+import com.android.systemui.shared.statusbar.phone.BarTransitions;
 import com.android.systemui.statusbar.notification.row.ExpandableNotificationRow;
+import com.android.systemui.statusbar.policy.GameSpaceManager;
 import com.android.systemui.util.Compile;
 
 import java.io.PrintWriter;
@@ -67,8 +69,8 @@ public interface CentralSurfaces extends Dumpable, LifecycleOwner, CoreStartable
     boolean DEBUG_WAKEUP_DELAY = Compile.IS_DEBUG;
     boolean SHOW_LOCKSCREEN_MEDIA_ARTWORK = true;
     String ACTION_FAKE_ARTWORK = "fake_artwork";
-    int FADE_KEYGUARD_START_DELAY = 100;
-    int FADE_KEYGUARD_DURATION = 300;
+    int FADE_KEYGUARD_START_DELAY = 50;
+    int FADE_KEYGUARD_DURATION = 150;
     int FADE_KEYGUARD_DURATION_PULSING = 96;
     long[] CAMERA_LAUNCH_GESTURE_VIBRATION_TIMINGS =
             new long[]{20, 20, 20, 20, 100, 20};
@@ -206,6 +208,9 @@ public interface CentralSurfaces extends Dumpable, LifecycleOwner, CoreStartable
     void onKeyguardViewManagerStatesUpdated();
 
     /**  */
+    void toggleSettingsPanel();
+
+    /** */
     boolean getCommandQueuePanelsEnabled();
 
     void showWirelessChargingAnimation(int batteryLevel);
@@ -259,8 +264,6 @@ public interface CentralSurfaces extends Dumpable, LifecycleOwner, CoreStartable
     void setBouncerShowing(boolean bouncerShowing);
 
     boolean isScreenFullyOff();
-
-    boolean isCameraAllowedByAdmin();
 
     boolean isGoingToSleep();
 
@@ -348,4 +351,18 @@ public interface CentralSurfaces extends Dumpable, LifecycleOwner, CoreStartable
      */
     ActivityTransitionAnimator.Controller getAnimatorControllerFromNotification(
             ExpandableNotificationRow associatedView);
+
+    void setBlockedGesturalNavigation(boolean blocked);
+
+    GameSpaceManager getGameSpaceManager();
+
+    void brightnessControl(MotionEvent event);
+
+    void onBrightnessChanged(boolean upOrCancel);
+
+    void startActivity(android.content.Intent intent, boolean dismiss);
+    void startPendingIntentDismissingKeyguard(android.app.PendingIntent intent);
+    com.android.systemui.shade.ShadeViewController getNotificationPanelViewController();
+    void wakeUpDeviceifDozing();
+    com.android.systemui.shade.NotificationShadeWindowView getNotificationShadeWindowView();
 }

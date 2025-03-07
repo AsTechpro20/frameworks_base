@@ -114,7 +114,7 @@ constructor(
                 notConnectedFlow
             } else {
                 combine(
-                    it.customizedNetworkName,
+                    it.networkName,
                     it.signalLevelIcon,
                     mobileDataContentName,
                 ) { networkNameModel, signalIcon, dataContentDescription ->

@@ -47,7 +47,7 @@ constructor(
     private val _isWifiDefault = MutableStateFlow(false)
     override val isWifiDefault: StateFlow<Boolean> = _isWifiDefault
 
-    private val _wifiNetwork = MutableStateFlow<WifiNetworkModel>(WifiNetworkModel.Inactive)
+    private val _wifiNetwork = MutableStateFlow<WifiNetworkModel>(WifiNetworkModel.Inactive())
     override val wifiNetwork: StateFlow<WifiNetworkModel> = _wifiNetwork
 
     private val _secondaryNetworks = MutableStateFlow<List<WifiNetworkModel>>(emptyList())
@@ -87,7 +87,7 @@ constructor(
         _isWifiEnabled.value = false
         _isWifiDefault.value = false
         _wifiActivity.value = DataActivityModel(hasActivityIn = false, hasActivityOut = false)
-        _wifiNetwork.value = WifiNetworkModel.Inactive
+        _wifiNetwork.value = WifiNetworkModel.Inactive()
     }
 
     private fun processEnabledWifiState(event: FakeWifiEventModel.Wifi) {
@@ -105,30 +105,21 @@ constructor(
     }
 
     private fun FakeWifiEventModel.Wifi.toWifiNetworkModel(): WifiNetworkModel =
-        WifiNetworkModel.Active(
-            networkId = DEMO_NET_ID,
+        WifiNetworkModel.Active.of(
             isValidated = validated ?: true,
             level = level ?: 0,
             ssid = ssid ?: DEMO_NET_SSID,
             hotspotDeviceType = hotspotDeviceType,
-
-            // These fields below aren't supported in demo mode, since they aren't needed to satisfy
-            // the interface.
-            isPasspointAccessPoint = false,
-            isOnlineSignUpForPasspointAccessPoint = false,
-            passpointProviderFriendlyName = null,
         )
 
     private fun FakeWifiEventModel.CarrierMerged.toCarrierMergedModel(): WifiNetworkModel =
-        WifiNetworkModel.CarrierMerged(
-            networkId = DEMO_NET_ID,
+        WifiNetworkModel.CarrierMerged.of(
             subscriptionId = subscriptionId,
             level = level,
             numberOfLevels = numberOfLevels,
         )
 
     companion object {
-        private const val DEMO_NET_ID = 1234
         private const val DEMO_NET_SSID = "Demo SSID"
     }
 }

@@ -97,9 +97,6 @@ constructor(
             }
             .stateIn(scope, SharingStarted.WhileSubscribed(), realImpl)
 
-    override val isOpportunisticSatelliteIconEnabled: Boolean
-        get() = activeRepo.value.isOpportunisticSatelliteIconEnabled
-
     override val isSatelliteProvisioned: StateFlow<Boolean> =
         activeRepo
             .flatMapLatest { it.isSatelliteProvisioned }
@@ -121,6 +118,6 @@ constructor(
             .stateIn(
                 scope,
                 SharingStarted.WhileSubscribed(),
-                realImpl.isSatelliteAllowedForCurrentLocation.value,
+                realImpl.isSatelliteAllowedForCurrentLocation.value
             )
 }

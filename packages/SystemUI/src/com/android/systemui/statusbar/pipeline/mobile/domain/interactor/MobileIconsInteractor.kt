@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.systemui.statusbar.pipeline.mobile.domain.interactor
 
 import android.content.Context
@@ -40,12 +34,9 @@ import com.android.systemui.statusbar.pipeline.mobile.data.model.SubscriptionMod
 import com.android.systemui.statusbar.pipeline.mobile.data.repository.MobileConnectionRepository
 import com.android.systemui.statusbar.pipeline.mobile.data.repository.MobileConnectionsRepository
 import com.android.systemui.statusbar.pipeline.shared.data.model.ConnectivitySlot
-import com.android.systemui.statusbar.pipeline.mobile.data.model.MobileIconCustomizationMode
-import com.android.systemui.statusbar.pipeline.mobile.domain.model.SignalIconModel
 import com.android.systemui.statusbar.pipeline.shared.data.repository.ConnectivityRepository
 import com.android.systemui.statusbar.policy.data.repository.UserSetupRepository
 import com.android.systemui.util.CarrierConfigTracker
-import com.android.systemui.util.CarrierNameCustomization
 import java.lang.ref.WeakReference
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -63,7 +54,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Business layer logic for the set of mobile subscription icons.
@@ -142,22 +132,6 @@ interface MobileIconsInteractor {
      * subId.
      */
     fun getMobileConnectionInteractorForSubId(subId: Int): MobileIconInteractor
-
-    /** True if the LTE rsrp should be preferred over the primary level. */
-    val alwaysUseRsrpLevelForLte: StateFlow<Boolean>
-
-    /** True if the no internet icon should be hidden.  */
-    val hideNoInternetState: StateFlow<Boolean>
-
-    val networkTypeIconCustomization: StateFlow<MobileIconCustomizationMode>
-
-    val showVolteIcon: StateFlow<Boolean>
-
-    val showVowifiIcon: StateFlow<Boolean>
-
-    val defaultDataSubId: StateFlow<Int>
-
-    fun setDdsIconFLow(iconFlow: StateFlow<SignalIconModel?>) {}
 }
 
 @Suppress("EXPERIMENTAL_IS_NOT_ENABLED")
@@ -175,18 +149,10 @@ constructor(
     @Application private val scope: CoroutineScope,
     private val context: Context,
     private val featureFlagsClassic: FeatureFlagsClassic,
-    val carrierNameCustomization: CarrierNameCustomization,
 ) : MobileIconsInteractor {
 
     // Weak reference lookup for created interactors
     private val reuseCache = mutableMapOf<Int, WeakReference<MobileIconInteractor>>()
-    private var ddsIcon: StateFlow<SignalIconModel?> = MutableStateFlow(null)
-
-    override fun setDdsIconFLow(iconFlow: StateFlow<SignalIconModel?>) {
-        ddsIcon = iconFlow
-    }
-
-    override val defaultDataSubId: StateFlow<Int> = mobileConnectionsRepo.defaultDataSubId
 
     override val mobileIsDefault =
         combine(
@@ -445,56 +411,7 @@ constructor(
             .stateIn(scope, SharingStarted.WhileSubscribed(), true)
 
     override val isDeviceInEmergencyCallsOnlyMode: Flow<Boolean> =
-        mobileConnectionsRepo.deviceServiceState
-            .map { it?.isEmergencyOnly ?: false }
-            .distinctUntilChanged()
-            .logDiffsForTable(
-                tableLogger,
-                columnPrefix = LOGGING_PREFIX,
-                columnName = "deviceEmergencyOnly",
-                initialValue = false,
-            )
-
-    override val alwaysUseRsrpLevelForLte: StateFlow<Boolean> =
-        mobileConnectionsRepo.defaultDataSubRatConfig
-            .mapLatest { it.showRsrpSignalLevelforLTE }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    override val hideNoInternetState: StateFlow<Boolean> =
-        mobileConnectionsRepo.defaultDataSubRatConfig
-            .mapLatest { it.hideNoInternetState }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    override val networkTypeIconCustomization: StateFlow<MobileIconCustomizationMode> =
-        mobileConnectionsRepo.defaultDataSubRatConfig
-            .mapLatest { defaultConfig ->
-                val enabled = defaultConfig.alwaysShowNetworkTypeIcon
-                    || defaultConfig.enableDdsRatIconEnhancement
-                    || defaultConfig.enableRatIconEnhancement
-                val state = MobileIconCustomizationMode(
-                    isRatCustomization = enabled,
-                    alwaysShowNetworkTypeIcon = defaultConfig.alwaysShowNetworkTypeIcon,
-                    ddsRatIconEnhancementEnabled = defaultConfig.enableDdsRatIconEnhancement,
-                    nonDdsRatIconEnhancementEnabled = defaultConfig.enableRatIconEnhancement,
-                )
-                state
-            }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), MobileIconCustomizationMode())
-
-    override val showVolteIcon: StateFlow<Boolean> =
-        mobileConnectionsRepo.defaultDataSubRatConfig
-            .mapLatest { it.showVolteIcon }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    override val showVowifiIcon: StateFlow<Boolean> =
-        mobileConnectionsRepo.defaultDataSubRatConfig
-            .mapLatest { it.showVowifiIcon }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    private val crossSimdisplaySingnalLevel: StateFlow<Boolean> =
-        mobileConnectionsRepo.defaultDataSubRatConfig
-            .mapLatest { it.crossSimdisplaySingnalLevel }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
+        mobileConnectionsRepo.isDeviceEmergencyCallCapable
 
     /** Vends out new [MobileIconInteractor] for a particular subId */
     override fun getMobileConnectionInteractorForSubId(subId: Int): MobileIconInteractor =
@@ -516,16 +433,7 @@ constructor(
                 isMobileHdForceHidden,
                 isVoWifiForceHidden,
                 mobileConnectionsRepo.getRepoForSubId(subId),
-                alwaysUseRsrpLevelForLte,
-                hideNoInternetState,
-                networkTypeIconCustomization,
-                showVolteIcon,
-                showVowifiIcon,
                 context,
-                mobileConnectionsRepo.defaultDataSubId,
-                ddsIcon,
-                crossSimdisplaySingnalLevel,
-                carrierNameCustomization,
             )
             .also { reuseCache[subId] = WeakReference(it) }
 

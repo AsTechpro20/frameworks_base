@@ -311,7 +311,7 @@
     <dimen name="notification_min_interaction_height">40dp</dimen>
 
     <!-- Radius for notifications corners without adjacent notifications -->
-    <dimen name="notification_corner_radius">28dp</dimen>
+    <dimen name="notification_corner_radius">@*android:dimen/config_dialogCornerRadius</dimen>
 
     <!-- Stroke width for notifications focus state overlay, see id/notification_focus_outline -->
     <dimen name="notification_focus_stroke_width">3dp</dimen>
@@ -339,7 +339,7 @@
     <dimen name="keyguard_indication_bottom_padding">16sp</dimen>
 
     <!-- The padding at start and end of indication text shown on AOD -->
-    <dimen name="keyguard_indication_text_padding">16dp</dimen>
+    <dimen name="keyguard_indication_text_padding">12dp</dimen>
 
     <!-- The min height on the indication text shown on AOD -->
     <dimen name="keyguard_indication_text_min_height">48dp</dimen>
@@ -659,15 +659,15 @@
     <!-- The size of the gesture span needed to activate the "pull" notification expansion -->
     <dimen name="pull_span_min">25dp</dimen>
 
-    <dimen name="qs_corner_radius">28dp</dimen>
     <dimen name="qs_tile_height">80dp</dimen>
+    <dimen name="qs_corner_radius">32dp</dimen>
     <dimen name="qs_tile_margin_horizontal">8dp</dimen>
     <dimen name="qs_tile_margin_vertical">@dimen/qs_tile_margin_horizontal</dimen>
     <dimen name="qs_tile_margin_top_bottom">4dp</dimen>
-    <dimen name="qs_brightness_margin_top">8dp</dimen>
-    <dimen name="qs_brightness_margin_bottom">16dp</dimen>
-    <dimen name="qqs_layout_margin_top">16dp</dimen>
-    <dimen name="qqs_layout_padding_bottom">24dp</dimen>
+    <dimen name="qs_brightness_margin_top">0dp</dimen>
+    <dimen name="qs_brightness_margin_bottom">0dp</dimen>
+    <dimen name="qqs_layout_margin_top">0dp</dimen>
+    <dimen name="qqs_layout_padding_bottom">6dp</dimen>
     <item name="qqs_expand_clock_scale" format="float" type="dimen">2.57</item>
 
     <!-- Most of the time it should be the same as notification_side_paddings as it's vertically
@@ -691,7 +691,7 @@
     <dimen name="qs_side_view_size">28dp</dimen>
     <dimen name="qs_label_container_margin">10dp</dimen>
     <dimen name="qs_quick_tile_size">60dp</dimen>
-    <dimen name="qs_tile_padding">12dp</dimen>
+    <dimen name="qs_tile_padding">8dp</dimen>
     <dimen name="qs_tile_start_padding">16dp</dimen>
     <dimen name="qs_drawable_end_margin">4dp</dimen>
     <dimen name="qs_page_indicator_width">16dp</dimen>
@@ -810,8 +810,10 @@
     <dimen name="keyguard_smartspace_top_offset">12dp</dimen>
     <!-- The amount to translate lockscreen elements on the GONE->AOD transition -->
     <dimen name="keyguard_enter_from_top_translation_y">-100dp</dimen>
+    <!-- The amount to translate lockscreen elements on the GONE->AOD transition, on device fold -->
+    <dimen name="keyguard_enter_from_side_translation_x">-100dp</dimen>
 
-    <dimen name="notification_scrim_corner_radius">32dp</dimen>
+    <dimen name="notification_scrim_corner_radius">@*android:dimen/config_dialogCornerRadius</dimen>
 
     <!-- The minimum amount the user needs to swipe to go to the camera / phone. -->
     <dimen name="keyguard_min_swipe_amount">110dp</dimen>
@@ -875,16 +877,16 @@
     <dimen name="kg_framed_avatar_size">32dp</dimen>
 
     <!-- Margin on the left side of the carrier text on Keyguard -->
-    <dimen name="keyguard_carrier_text_margin">16dp</dimen>
+    <dimen name="keyguard_carrier_text_margin">@dimen/status_bar_padding_start</dimen>
 
     <!-- Additional translation (downwards) for appearing notifications when going to the full shade
          from Keyguard. -->
     <dimen name="go_to_full_shade_appearing_translation">200dp</dimen>
 
     <!-- The width/height of the keyguard bottom area icon view on keyguard. -->
-    <dimen name="keyguard_affordance_fixed_height">48dp</dimen>
-    <dimen name="keyguard_affordance_fixed_width">48dp</dimen>
-    <dimen name="keyguard_affordance_fixed_radius">24dp</dimen>
+    <dimen name="keyguard_affordance_fixed_height">56dp</dimen>
+    <dimen name="keyguard_affordance_fixed_width">56dp</dimen>
+    <dimen name="keyguard_affordance_fixed_radius">30dp</dimen>
     <dimen name="keyguard_affordance_fixed_padding">12dp</dimen>
 
     <!--  The width/height/padding of the keyguard settings popup menu  -->
@@ -942,7 +944,7 @@
     <!-- Starting margin before the signal cluster -->
 
     <!-- Padding between signal cluster and battery icon -->
-    <dimen name="signal_cluster_battery_padding">6dp</dimen>
+    <dimen name="signal_cluster_battery_padding">4dp</dimen>
 
     <!-- end padding for battery icon in status bar -->
     <dimen name="status_bar_battery_end_padding">0dp</dimen>
@@ -980,7 +982,8 @@
     <!-- Minimum margin of the notification panel on the side, when being positioned dynamically -->
     <dimen name="notification_panel_min_side_margin">48dp</dimen>
 
-    <dimen name="volume_row_slider_height">192dp</dimen>
+    <dimen name="volume_row_slider_height">184dp</dimen>
+    <dimen name="volume_row_slider_progress_height">158dp</dimen>
 
     <!-- Thickness of the assist disclosure beams -->
     <dimen name="assist_disclosure_thickness">2.5dp</dimen>
@@ -1038,16 +1041,19 @@
     <dimen name="global_actions_controls_y_translation">20dp</dimen>
 
     <!-- Shutdown and restart actions are larger in power options dialog -->
-    <dimen name="global_actions_power_dialog_item_height">190dp</dimen>
-    <dimen name="global_actions_power_dialog_item_width">255dp</dimen>
-    <dimen name="global_actions_power_dialog_item_bottom_margin">45dp</dimen>
+    <dimen name="global_actions_power_dialog_item_height">108dp</dimen>
+    <dimen name="global_actions_power_dialog_item_width">165dp</dimen>
+    <dimen name="global_actions_power_dialog_item_bottom_margin">14dp</dimen>
 
-    <!-- Power Menu Lite -->
-    <dimen name="global_actions_button_size">96dp</dimen>
-    <dimen name="global_actions_button_padding">38dp</dimen>
+    <!-- Power Menu Lite -->   
+    <dimen name="global_actions_button_size">76dp</dimen>
+    <dimen name="global_actions_button_padding">24dp</dimen>
     <dimen name="global_actions_corner_radius">28dp</dimen>
     <dimen name="global_actions_lite_padding">24dp</dimen>
     <dimen name="global_actions_info_margin">32dp</dimen>
+
+    <dimen name="global_actions_power_dialog_message_top_margin">15dp</dimen>
+    <dimen name="global_actions_power_dialog_twoline_message_top_margin">0dp</dimen>
 
     <!-- The maximum offset in either direction that elements are moved horizontally to prevent
          burn-in on AOD. -->
@@ -1107,7 +1113,7 @@
     <dimen name="biometric_dialog_fingerprint_icon_height">100dp</dimen>
     <dimen name="biometric_dialog_button_negative_max_width">160dp</dimen>
     <dimen name="biometric_dialog_button_positive_max_width">136dp</dimen>
-    <dimen name="biometric_dialog_corner_size">28dp</dimen>
+    <dimen name="biometric_dialog_corner_size">@*android:dimen/rounded_corner_radius</dimen>
     <dimen name="biometric_dialog_indicator_max_width">280dp</dimen>
     <!-- Y translation when showing/dismissing the dialog-->
     <dimen name="biometric_dialog_animation_translation_offset">350dp</dimen>
@@ -1132,8 +1138,8 @@
     <dimen name="biometric_prompt_one_pane_medium_horizontal_guideline_padding">0dp</dimen>
 
     <!-- Dimensions for biometric prompt scroll view padding -->
-    <dimen name="biometric_prompt_top_scroll_view_bottom_padding">24dp</dimen>
-    <dimen name="biometric_prompt_top_scroll_view_horizontal_padding">24dp</dimen>
+    <dimen name="biometric_prompt_top_scroll_view_bottom_padding">16dp</dimen>
+    <dimen name="biometric_prompt_top_scroll_view_horizontal_padding">16dp</dimen>
 
     <!-- Dimensions for biometric prompt icon padding -->
     <dimen name="biometric_prompt_portrait_small_bottom_padding">60dp</dimen>
@@ -1206,7 +1212,7 @@
     <!-- Icon size of Ongoing App Ops chip -->
     <dimen name="ongoing_appops_chip_icon_size">16sp</dimen>
     <!-- Radius of Ongoing App Ops chip corners -->
-    <dimen name="ongoing_appops_chip_bg_corner_radius">28dp</dimen>
+    <dimen name="ongoing_appops_chip_bg_corner_radius">@*android:dimen/config_dialogCornerRadius</dimen>
     <!--  One or two privacy items  -->
     <dimen name="ongoing_appops_chip_min_width">56dp</dimen>
     <!--  Three privacy items. This value must not be exceeded  -->
@@ -1216,7 +1222,12 @@
     <dimen name="ongoing_appops_chip_animation_in_status_bar_translation_x">15dp</dimen>
     <dimen name="ongoing_appops_chip_animation_out_status_bar_translation_x">7dp</dimen>
     <!--  Total minimum padding to enforce to ensure that the dot can always show  -->
-    <dimen name="ongoing_appops_dot_min_padding">20dp</dimen>
+    <!--  Currently used in StatusBarContentInsetsProvider.kt and KeyguardStatusBarView.java,
+          which choose the larger of this or rounded_corner_content_padding,
+          to calculate safe start/end layout insets.
+          For devices with centered notch/cutout, this should be small to make it
+          easier to maintain symmetrical spacing at start/end of layout. -->
+    <dimen name="ongoing_appops_dot_min_padding">10dp</dimen>
 
     <dimen name="ongoing_appops_dialog_side_margins">@dimen/notification_shade_content_margin_horizontal</dimen>
 
@@ -1321,6 +1332,7 @@
     <dimen name="magnifier_drag_handle_padding">3dp</dimen>
     <!-- Magnification settings panel -->
     <dimen name="magnification_setting_view_margin">24dp</dimen>
+    <dimen name="magnification_setting_view_item_horizontal_spacing">12dp</dimen>
     <dimen name="magnification_setting_text_size">18sp</dimen>
     <dimen name="magnification_setting_background_padding">24dp</dimen>
     <dimen name="magnification_setting_background_corner_radius">28dp</dimen>
@@ -1676,6 +1688,9 @@
     <dimen name="rounded_slider_icon_inset">14dp</dimen>
     <!-- rounded_slider_corner_radius - rounded_slider_track_corner_radius -->
     <dimen name="rounded_slider_track_inset">22dp</dimen>
+    <dimen name="rounded_slider_track_width">4dp</dimen>
+    <!-- rounded_slider_track_width / 2 -->
+    <dimen name="rounded_slider_track_corner_radius">2dp</dimen>
     <dimen name="rounded_slider_background_padding">8dp</dimen>
     <!-- rounded_slider_corner_radius + rounded_slider_background_padding -->
     <dimen name="rounded_slider_background_rounded_corner">32dp</dimen>
@@ -1723,11 +1738,19 @@
     <dimen name="wallet_button_vertical_padding">8dp</dimen>
 
     <!-- Ongoing activity chip -->
+    <!-- The activity chip side padding, used with the default phone icon. -->
     <dimen name="ongoing_activity_chip_side_padding">12dp</dimen>
+    <!-- The activity chip side padding, used with an icon that has embedded padding (e.g. if the icon comes from the notification's smallIcon field). If the icon has padding, the chip itself can have less padding. -->
+    <dimen name="ongoing_activity_chip_side_padding_for_embedded_padding_icon">6dp</dimen>
+    <!-- The icon size, used with the default phone icon. -->
     <dimen name="ongoing_activity_chip_icon_size">16dp</dimen>
-    <!-- The padding between the icon and the text. -->
+    <!-- The icon size, used with an icon that has embedded padding. (If the icon has embedded padding, we need to make the whole icon larger so the icon itself doesn't look small.) -->
+    <dimen name="ongoing_activity_chip_embedded_padding_icon_size">22dp</dimen>
+    <!-- The padding between the icon and the text. Only used if the default phone icon is used. -->
     <dimen name="ongoing_activity_chip_icon_text_padding">4dp</dimen>
-    <dimen name="ongoing_activity_chip_corner_radius">28dp</dimen>
+    <!-- The end padding for the timer text view. Only used if an embedded padding icon is used. -->
+    <dimen name="ongoing_activity_chip_text_end_padding_for_embedded_padding_icon">6dp</dimen>
+    <dimen name="ongoing_activity_chip_corner_radius">@*android:dimen/config_dialogCornerRadius</dimen>
 
     <!-- Status bar user chip -->
     <dimen name="status_bar_user_chip_avatar_size">16dp</dimen>
@@ -1737,6 +1760,7 @@
 
     <!-- System UI Dialog -->
     <dimen name="dialog_title_text_size">24sp</dimen>
+    <dimen name="dialog_button_side_margin">8dp</dimen>
 
     <!-- Internet panel related dimensions -->
     <dimen name="internet_dialog_list_max_height">662dp</dimen>
@@ -1750,7 +1774,7 @@
     <dimen name="signal_strength_icon_size">24dp</dimen>
 
     <!-- Internet dialog related dimensions -->
-    <dimen name="internet_dialog_corner_radius">24dp</dimen>
+    <dimen name="internet_dialog_corner_radius">@*android:dimen/config_dialogCornerRadius</dimen>
     <!-- Width of progress bar -->
     <dimen name="internet_dialog_progress_bar_width">152dp</dimen>
     <!-- End margin of network layout -->
@@ -1961,6 +1985,14 @@
     <dimen name="backlight_indicator_step_small_radius">4dp</dimen>
     <dimen name="backlight_indicator_step_large_radius">28dp</dimen>
 
+    <!-- Touchpad gestures tutorial-->
+    <!-- This value is in unit of dp/ms
+        TriggerSwipeUpTouchTracker (which is base for gesture tutorial implementation) uses value
+        of 0.5dp but from manual testing it's too high and doesn't really feel like it's forcing
+        slowing down. Also for tutorial it should be fine to lean to the side of being more strict
+        rather than not strict enough and not teaching user the proper gesture as a result.-->
+    <dimen name="touchpad_recent_apps_gesture_velocity_threshold">0.05dp</dimen>
+
     <!-- Broadcast dialog -->
     <dimen name="broadcast_dialog_title_img_margin_top">18dp</dimen>
     <dimen name="broadcast_dialog_title_text_size">24sp</dimen>
@@ -1987,10 +2019,10 @@
     <!-- Shadow for dream overlay status bar complications -->
     <dimen name="dream_overlay_status_bar_key_text_shadow_dx">0.5dp</dimen>
     <dimen name="dream_overlay_status_bar_key_text_shadow_dy">0.5dp</dimen>
-    <dimen name="dream_overlay_status_bar_key_text_shadow_radius">1dp</dimen>
+    <dimen name="dream_overlay_status_bar_key_text_shadow_radius">3dp</dimen>
     <dimen name="dream_overlay_status_bar_ambient_text_shadow_dx">0.5dp</dimen>
     <dimen name="dream_overlay_status_bar_ambient_text_shadow_dy">0.5dp</dimen>
-    <dimen name="dream_overlay_status_bar_ambient_text_shadow_radius">2dp</dimen>
+    <dimen name="dream_overlay_status_bar_ambient_text_shadow_radius">3dp</dimen>
     <dimen name="dream_overlay_icon_inset_dimen">0dp</dimen>
 
     <!-- Default device corner radius, used for assist UI -->

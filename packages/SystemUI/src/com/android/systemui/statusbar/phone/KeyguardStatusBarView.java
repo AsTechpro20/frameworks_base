@@ -16,7 +16,6 @@
 
 package com.android.systemui.statusbar.phone;
 
-import static com.android.systemui.Flags.centralizedStatusBarHeightFix;
 import static com.android.systemui.ScreenDecorations.DisplayCutoutView.boundsFromDirection;
 import static com.android.systemui.util.Utils.getStatusBarHeaderHeightKeyguard;
 
@@ -73,7 +72,6 @@ public class KeyguardStatusBarView extends RelativeLayout {
 
     private final ArrayList<Rect> mEmptyTintRect = new ArrayList<>();
 
-    private boolean mShowPercentAvailable;
     private boolean mBatteryCharging;
 
     private TextView mCarrierLabel;
@@ -133,9 +131,6 @@ public class KeyguardStatusBarView extends RelativeLayout {
         mUserSwitcherContainer = findViewById(R.id.user_switcher_container);
         mIsPrivacyDotEnabled = mContext.getResources().getBoolean(R.bool.config_enablePrivacyDot);
         loadDimens();
-        if (!centralizedStatusBarHeightFix()) {
-            setGravity(Gravity.CENTER_VERTICAL);
-        }
     }
 
     /**
@@ -217,8 +212,6 @@ public class KeyguardStatusBarView extends RelativeLayout {
                 R.dimen.ongoing_appops_dot_min_padding);
         mCutoutSideNudge = getResources().getDimensionPixelSize(
                 R.dimen.display_cutout_margin_consumption);
-        mShowPercentAvailable = getContext().getResources().getBoolean(
-                com.android.internal.R.bool.config_battery_percentage_setting_available);
         mRoundedCornerPadding = res.getDimensionPixelSize(
                 R.dimen.rounded_corner_content_padding);
     }
@@ -255,25 +248,19 @@ public class KeyguardStatusBarView extends RelativeLayout {
                 mMultiUserAvatar.setVisibility(View.GONE);
             }
         }
-        mBatteryView.setForceShowPercent(mBatteryCharging && mShowPercentAvailable);
+       // mBatteryView.setForceShowPercent(mBatteryCharging);
     }
 
     private void updateSystemIconsLayoutParams() {
         LinearLayout.LayoutParams lp =
                 (LinearLayout.LayoutParams) mSystemIconsContainer.getLayoutParams();
 
-        // Use status_bar_padding_end to replace original
-        // system_icons_super_container_avatarless_margin_end to prevent different end alignment
-        // between PhoneStatusBarView and KeyguardStatusBarView
-        int baseMarginEnd = mStatusBarPaddingEnd;
+        // Don't use status_bar_padding_end here after all, since this is the nested system icon container,
+        // and we're going to be applying extra padding to the outer status_icon_area view instead.
         int marginEnd =
-                mKeyguardUserSwitcherEnabled ? mSystemIconsSwitcherHiddenExpandedMargin
-                        : baseMarginEnd;
+                mKeyguardUserSwitcherEnabled ? mSystemIconsSwitcherHiddenExpandedMargin : 0;
 
-        // Align PhoneStatusBar right margin/padding, only use
-        // 1. status bar layout: mPadding(consider round_corner + privacy dot)
-        // 2. icon container: R.dimen.status_bar_padding_end
-
+        // Align PhoneStatusBar right margin/padding
         if (marginEnd != lp.getMarginEnd()) {
             lp.setMarginEnd(marginEnd);
             mSystemIconsContainer.setLayoutParams(lp);
@@ -322,7 +309,7 @@ public class KeyguardStatusBarView extends RelativeLayout {
         final int minRight = (!isLayoutRtl() && mIsPrivacyDotEnabled)
                 ? Math.max(mMinDotWidth, mPadding.right) : mPadding.right;
 
-        int top = centralizedStatusBarHeightFix() ? waterfallTop + mPadding.top : waterfallTop;
+        int top = waterfallTop + mPadding.top;
         setPadding(minLeft, top, minRight, 0);
     }
 
@@ -439,13 +426,14 @@ public class KeyguardStatusBarView extends RelativeLayout {
 
     /** Should only be called from {@link KeyguardStatusBarViewController}. */
     void onOverlayChanged() {
-        int theme = Utils.getThemeAttr(mContext, com.android.internal.R.attr.textAppearanceSmall);
-        mCarrierLabel.setTextAppearance(theme);
+        final int carrierTheme = R.style.TextAppearance_StatusBar_Clock;
+        mCarrierLabel.setTextAppearance(carrierTheme);
         mBatteryView.updatePercentView();
 
+        final int userSwitcherTheme = R.style.TextAppearance_StatusBar_UserChip;
         TextView userSwitcherName = mUserSwitcherContainer.findViewById(R.id.current_user_name);
         if (userSwitcherName != null) {
-            userSwitcherName.setTextAppearance(theme);
+            userSwitcherName.setTextAppearance(userSwitcherTheme);
         }
     }
 

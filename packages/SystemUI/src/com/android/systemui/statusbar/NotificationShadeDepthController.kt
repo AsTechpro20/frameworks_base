@@ -72,11 +72,11 @@ class NotificationShadeDepthController @Inject constructor(
     configurationController: ConfigurationController
 ) : ShadeExpansionListener, Dumpable {
     companion object {
-        private const val WAKE_UP_ANIMATION_ENABLED = false
+        private const val WAKE_UP_ANIMATION_ENABLED = true
         private const val VELOCITY_SCALE = 100f
         private const val MAX_VELOCITY = 3000f
         private const val MIN_VELOCITY = -MAX_VELOCITY
-        private const val INTERACTION_BLUR_FRACTION = 0.8f
+        private const val INTERACTION_BLUR_FRACTION = 0.9f
         private const val ANIMATION_BLUR_FRACTION = 1f - INTERACTION_BLUR_FRACTION
         private const val TAG = "DepthController"
     }

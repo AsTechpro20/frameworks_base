@@ -19,6 +19,9 @@ package com.android.systemui.media.controls.ui.controller;
 import static android.provider.Settings.ACTION_MEDIA_CONTROLS_SETTINGS;
 
 import static com.android.settingslib.flags.Flags.legacyLeAudioSharing;
+import static com.android.systemui.Flags.communalHub;
+import static com.android.systemui.Flags.mediaLockscreenLaunchAnimation;
+import static com.android.systemui.media.controls.domain.pipeline.MediaActionsKt.getNotificationActions;
 import static com.android.systemui.media.controls.shared.model.SmartspaceMediaDataKt.NUM_REQUIRED_RECOMMENDATIONS;
 
 import android.animation.Animator;
@@ -36,6 +39,7 @@ import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.BlendMode;
 import android.graphics.Color;
@@ -52,9 +56,13 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Icon;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.TransitionDrawable;
+import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Process;
 import android.os.Trace;
 import android.os.UserHandle;
@@ -89,6 +97,9 @@ import com.android.systemui.animation.ActivityTransitionAnimator;
 import com.android.systemui.animation.GhostedViewTransitionAnimatorController;
 import com.android.systemui.bluetooth.BroadcastDialogController;
 import com.android.systemui.broadcast.BroadcastSender;
+import com.android.systemui.communal.domain.interactor.CommunalSceneInteractor;
+import com.android.systemui.communal.widgets.CommunalTransitionAnimatorController;
+import com.android.systemui.colorextraction.SysuiColorExtractor;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
 import com.android.systemui.media.controls.domain.pipeline.MediaDataManager;
@@ -107,7 +118,6 @@ import com.android.systemui.media.controls.ui.view.MediaViewHolder;
 import com.android.systemui.media.controls.ui.view.RecommendationViewHolder;
 import com.android.systemui.media.controls.ui.viewmodel.SeekBarViewModel;
 import com.android.systemui.media.controls.util.MediaDataUtils;
-import com.android.systemui.media.controls.util.MediaFlags;
 import com.android.systemui.media.controls.util.MediaUiEventLogger;
 import com.android.systemui.media.controls.util.SmallHash;
 import com.android.systemui.media.dialog.MediaOutputDialogManager;
@@ -116,6 +126,7 @@ import com.android.systemui.monet.Style;
 import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.FalsingManager;
 import com.android.systemui.res.R;
+import com.android.systemui.scene.shared.flag.SceneContainerFlag;
 import com.android.systemui.shared.system.SysUiStatsLog;
 import com.android.systemui.statusbar.NotificationLockscreenUserManager;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
@@ -201,10 +212,11 @@ public class MediaControlPanel {
     );
 
     // Time in millis for playing turbulence noise that is played after a touch ripple.
-    @VisibleForTesting static final long TURBULENCE_NOISE_PLAY_DURATION = 7500L;
+    @VisibleForTesting
+    static final long TURBULENCE_NOISE_PLAY_DURATION = 7500L;
 
     private final SeekBarViewModel mSeekBarViewModel;
-    private final MediaFlags mMediaFlags;
+    private final CommunalSceneInteractor mCommunalSceneInteractor;
     private SeekBarObserver mSeekBarObserver;
     protected final Executor mBackgroundExecutor;
     private final DelayableExecutor mMainExecutor;
@@ -266,6 +278,16 @@ public class MediaControlPanel {
     private boolean mWasPlaying = false;
     private boolean mButtonClicked = false;
 
+    private final boolean mShowRippleByDefault;
+    private final boolean mShowTurbulenceByDefault;
+    private boolean mAlwaysOnTime;
+    private boolean mTimeAsNext;
+    private boolean mShowRipple;
+    private boolean mShowTurbulence;
+    private int mActionsLimit = 5;
+
+    private final SysuiColorExtractor mSysuiColorExtractor;
+    
     private final PaintDrawCallback mNoiseDrawCallback =
             new PaintDrawCallback() {
                 @Override
@@ -288,12 +310,115 @@ public class MediaControlPanel {
                 }
             };
 
+    private final SettingsObserver mSettingsObserver = new SettingsObserver();
+    private class SettingsObserver extends ContentObserver {
+        SettingsObserver() {
+            super(new Handler(Looper.getMainLooper()));
+        }
+
+        void observe() {
+            mContext.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(
+                    Settings.Secure.MEDIA_CONTROLS_ALWAYS_SHOW_TIME),
+                    false, this, UserHandle.USER_ALL);
+            mContext.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(
+                    Settings.Secure.MEDIA_CONTROLS_TIME_AS_NEXT),
+                    false, this, UserHandle.USER_ALL);
+            mContext.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(
+                    Settings.Secure.MEDIA_CONTROLS_RIPPLE),
+                    false, this, UserHandle.USER_ALL);
+            mContext.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(
+                    Settings.Secure.MEDIA_CONTROLS_TURBULENCE),
+                    false, this, UserHandle.USER_ALL);
+            mContext.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(
+                    Settings.Secure.MEDIA_CONTROLS_ACTIONS),
+                    false, this, UserHandle.USER_ALL);
+        }
+
+        void stop() {
+            mContext.getContentResolver().unregisterContentObserver(this);
+        }
+
+        @Override
+        public void onChange(boolean selfChange, Uri uri) {
+            switch (uri.getLastPathSegment()) {
+                case Settings.Secure.MEDIA_CONTROLS_ALWAYS_SHOW_TIME:
+                    updateAlwaysOnTime();
+                    if (mSeekBarObserver == null) break;
+                    mSeekBarObserver.setAlwaysOnTime(mAlwaysOnTime);
+                    updateDisplayForScrubbing();
+                    break;
+                case Settings.Secure.MEDIA_CONTROLS_TIME_AS_NEXT:
+                    updateTimeAsNext();
+                    updateDisplayForScrubbing();
+                    break;
+                case Settings.Secure.MEDIA_CONTROLS_RIPPLE:
+                    updateShowRipple();
+                    updatePlayers();
+                    break;
+                case Settings.Secure.MEDIA_CONTROLS_TURBULENCE:
+                    updateShowTurbulence();
+                    updatePlayers();
+                    break;
+                case Settings.Secure.MEDIA_CONTROLS_ACTIONS:
+                    updateShowActions();
+                    updatePlayers();
+                    break;
+            }
+        }
+
+        void update() {
+            updateAlwaysOnTime();
+            updateTimeAsNext();
+            updateShowRipple();
+            updateShowTurbulence();
+            updateShowActions();
+        }
+
+        private void updateAlwaysOnTime() {
+            mAlwaysOnTime = Settings.Secure.getInt(mContext.getContentResolver(),
+                    Settings.Secure.MEDIA_CONTROLS_ALWAYS_SHOW_TIME, 0) == 1;
+        }
+
+        private void updateTimeAsNext() {
+            mTimeAsNext = Settings.Secure.getInt(mContext.getContentResolver(),
+                    Settings.Secure.MEDIA_CONTROLS_TIME_AS_NEXT, 0) == 1;
+        }
+
+        private void updateShowRipple() {
+            mShowRipple = Settings.Secure.getInt(mContext.getContentResolver(),
+                    Settings.Secure.MEDIA_CONTROLS_RIPPLE, mShowRippleByDefault ? 1 : 0) == 1;
+        }
+
+        private void updateShowTurbulence() {
+            mShowTurbulence = Settings.Secure.getInt(mContext.getContentResolver(),
+                    Settings.Secure.MEDIA_CONTROLS_TURBULENCE, mShowTurbulenceByDefault ? 1 : 0) == 1;
+        }
+
+        private void updateShowActions() {
+            mActionsLimit = Settings.Secure.getInt(mContext.getContentResolver(),
+                    Settings.Secure.MEDIA_CONTROLS_ACTIONS, 5);
+        }
+
+        private void updatePlayers() {
+            if (mMediaCarouselController == null) return;
+            mMediaCarouselController.updatePlayers(true);
+        }
+
+        private void updateDisplayForScrubbing() {
+            if (mMainExecutor == null) return;
+            if (mMediaData == null) return;
+            mMainExecutor.execute(() ->
+                    updateDisplayForScrubbingChange(mMediaData.getSemanticActions()));
+        }
+    }
+
     /**
      * Initialize a new control panel
      *
      * @param backgroundExecutor background executor, used for processing artwork
-     * @param mainExecutor main thread executor, used if we receive callbacks on the background
-     *                     thread that then trigger UI changes.
+     * @param mainExecutor       main thread executor, used if we receive callbacks on the
+     *                           background
+     *                           thread that then trigger UI changes.
      * @param activityStarter    activity starter
      */
     @Inject
@@ -313,10 +438,11 @@ public class MediaControlPanel {
             MediaUiEventLogger logger,
             KeyguardStateController keyguardStateController,
             ActivityIntentHelper activityIntentHelper,
+            CommunalSceneInteractor communalSceneInteractor,
             NotificationLockscreenUserManager lockscreenUserManager,
             BroadcastDialogController broadcastDialogController,
             GlobalSettings globalSettings,
-            MediaFlags mediaFlags
+            SysuiColorExtractor colorExtractor
     ) {
         mContext = context;
         mBackgroundExecutor = backgroundExecutor;
@@ -335,7 +461,13 @@ public class MediaControlPanel {
         mActivityIntentHelper = activityIntentHelper;
         mLockscreenUserManager = lockscreenUserManager;
         mBroadcastDialogController = broadcastDialogController;
-        mMediaFlags = mediaFlags;
+        mCommunalSceneInteractor = communalSceneInteractor;
+        mSysuiColorExtractor = colorExtractor;
+
+        mShowRippleByDefault = context.getResources().getBoolean(
+                com.android.internal.R.bool.config_mediaControlsRippleByDefault);
+        mShowTurbulenceByDefault = context.getResources().getBoolean(
+                com.android.internal.R.bool.config_mediaControlsTurbulenceByDefault);
 
         mSeekBarViewModel.setLogSeek(() -> {
             if (mPackageName != null && mInstanceId != null) {
@@ -360,6 +492,7 @@ public class MediaControlPanel {
         mSeekBarViewModel.removeEnabledChangeListener(mEnabledChangeListener);
         mSeekBarViewModel.onDestroy();
         mMediaViewController.onDestroy();
+        mSettingsObserver.stop();
     }
 
     /**
@@ -374,6 +507,7 @@ public class MediaControlPanel {
 
     /**
      * Get the recommendation view holder used to display Smartspace media recs.
+     *
      * @return the recommendation view holder
      */
     @Nullable
@@ -450,10 +584,13 @@ public class MediaControlPanel {
 
     /** Attaches the player to the player view holder. */
     public void attachPlayer(MediaViewHolder vh) {
+        mSettingsObserver.update();
+        mSettingsObserver.observe();
+
         mMediaViewHolder = vh;
         TransitionLayout player = vh.getPlayer();
 
-        mSeekBarObserver = new SeekBarObserver(vh);
+        mSeekBarObserver = new SeekBarObserver(vh, mAlwaysOnTime);
         mSeekBarViewModel.getProgress().observeForever(mSeekBarObserver);
         mSeekBarViewModel.attachTouchHandlers(vh.getSeekBar());
         mSeekBarViewModel.setScrubbingChangeListener(mScrubbingChangeListener);
@@ -537,6 +674,7 @@ public class MediaControlPanel {
 
     /** Bind this player view based on the data given. */
     public void bindPlayer(@NonNull MediaData data, String key) {
+        SceneContainerFlag.assertInLegacyMode();
         if (mMediaViewHolder == null) {
             return;
         }
@@ -560,6 +698,7 @@ public class MediaControlPanel {
 
         if (mToken != null) {
             mController = new MediaController(mContext, mToken);
+            mController.registerCallback(mCb);
         } else {
             mController = null;
         }
@@ -577,13 +716,24 @@ public class MediaControlPanel {
                         && mActivityIntentHelper.wouldPendingShowOverLockscreen(clickIntent,
                         mLockscreenUserManager.getCurrentUserId());
                 if (showOverLockscreen) {
-                    try {
-                        ActivityOptions opts = ActivityOptions.makeBasic();
-                        opts.setPendingIntentBackgroundActivityStartMode(
-                                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
-                        clickIntent.send(opts.toBundle());
-                    } catch (PendingIntent.CanceledException e) {
-                        Log.e(TAG, "Pending intent for " + key + " was cancelled");
+                    if (mediaLockscreenLaunchAnimation()) {
+                        mActivityStarter.startPendingIntentMaybeDismissingKeyguard(
+                                clickIntent,
+                                /* dismissShade = */ true,
+                                /* intentSentUiThreadCallback = */ null,
+                                buildLaunchAnimatorController(mMediaViewHolder.getPlayer()),
+                                /* fillIntent = */ null,
+                                /* extraOptions = */ null,
+                                /* customMessage */ null);
+                    } else {
+                        try {
+                            ActivityOptions opts = ActivityOptions.makeBasic();
+                            opts.setPendingIntentBackgroundActivityStartMode(
+                                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                            clickIntent.send(opts.toBundle());
+                        } catch (PendingIntent.CanceledException e) {
+                            Log.e(TAG, "Pending intent for " + key + " was cancelled");
+                        }
                     }
                 } else {
                     mActivityStarter.postStartActivityDismissingKeyguard(clickIntent,
@@ -591,6 +741,8 @@ public class MediaControlPanel {
                 }
             });
         }
+
+        mSettingsObserver.update();
 
         // Seek Bar
         if (data.getResumption() && data.getResumeProgress() != null) {
@@ -619,10 +771,7 @@ public class MediaControlPanel {
         // to something which might impact the measurement
         // State refresh interferes with the translation animation, only run it if it's not running.
         if (!mMetadataAnimationHandler.isRunning()) {
-            // Don't refresh in scene framework, because it will calculate with invalid layout sizes
-            if (!mMediaFlags.isSceneContainerEnabled()) {
-                mMediaViewController.refreshState();
-            }
+            mMediaViewController.refreshState();
         }
 
         if (shouldPlayTurbulenceNoise()) {
@@ -681,7 +830,7 @@ public class MediaControlPanel {
             // TODO(b/233698402): Use the package name instead of app label to avoid the
             // unexpected result.
             mIsCurrentBroadcastedApp = device != null
-                && TextUtils.equals(device.getName(),
+                    && TextUtils.equals(device.getName(),
                     mContext.getString(R.string.broadcasting_description_is_broadcasting));
             useDisabledAlpha = !mIsCurrentBroadcastedApp;
             // Always be enabled if the broadcast button is shown
@@ -752,7 +901,7 @@ public class MediaControlPanel {
                             PendingIntent deviceIntent = device.getIntent();
                             boolean showOverLockscreen = mKeyguardStateController.isShowing()
                                     && mActivityIntentHelper.wouldPendingShowOverLockscreen(
-                                        deviceIntent, mLockscreenUserManager.getCurrentUserId());
+                                    deviceIntent, mLockscreenUserManager.getCurrentUserId());
                             if (deviceIntent.isActivity()) {
                                 if (!showOverLockscreen) {
                                     mActivityStarter.postStartActivityDismissingKeyguard(
@@ -813,24 +962,26 @@ public class MediaControlPanel {
         ConstraintSet expandedSet = mMediaViewController.getExpandedLayout();
         ConstraintSet collapsedSet = mMediaViewController.getCollapsedLayout();
         return mMetadataAnimationHandler.setNext(
-            new Triple(data.getSong(), data.getArtist(), data.isExplicit()),
-            () -> {
-                titleText.setText(data.getSong());
-                artistText.setText(data.getArtist());
-                setVisibleAndAlpha(expandedSet, R.id.media_explicit_indicator, data.isExplicit());
-                setVisibleAndAlpha(collapsedSet, R.id.media_explicit_indicator, data.isExplicit());
+                new Triple(data.getSong(), data.getArtist(), data.isExplicit()),
+                () -> {
+                    titleText.setText(data.getSong());
+                    artistText.setText(data.getArtist());
+                    setVisibleAndAlpha(expandedSet, R.id.media_explicit_indicator,
+                            data.isExplicit());
+                    setVisibleAndAlpha(collapsedSet, R.id.media_explicit_indicator,
+                            data.isExplicit());
 
-                // refreshState is required here to resize the text views (and prevent ellipsis)
-                mMediaViewController.refreshState();
-                return Unit.INSTANCE;
-            },
-            () -> {
-                // After finishing the enter animation, we refresh state. This could pop if
-                // something is incorrectly bound, but needs to be run if other elements were
-                // updated while the enter animation was running
-                mMediaViewController.refreshState();
-                return Unit.INSTANCE;
-            });
+                    // refreshState is required here to resize the text views (and prevent ellipsis)
+                    mMediaViewController.refreshState();
+                    return Unit.INSTANCE;
+                },
+                () -> {
+                    // After finishing the enter animation, we refresh state. This could pop if
+                    // something is incorrectly bound, but needs to be run if other elements were
+                    // updated while the enter animation was running
+                    mMediaViewController.refreshState();
+                    return Unit.INSTANCE;
+                });
     }
 
     // We may want to look into unifying this with bindRecommendationContentDescription if/when we
@@ -886,11 +1037,6 @@ public class MediaControlPanel {
         // Capture width & height from views in foreground for artwork scaling in background
         int width = mMediaViewHolder.getAlbumView().getMeasuredWidth();
         int height = mMediaViewHolder.getAlbumView().getMeasuredHeight();
-        if (mMediaFlags.isSceneContainerEnabled() && (width <= 0 || height <= 0)) {
-            // TODO(b/312714128): ensure we have a valid size before setting background
-            width = mMediaViewController.getWidthInSceneContainerPx();
-            height = mMediaViewController.getHeightInSceneContainerPx();
-        }
 
         final int finalWidth = width;
         final int finalHeight = height;
@@ -980,6 +1126,7 @@ public class MediaControlPanel {
                         appIconView.setImageResource(R.drawable.ic_music_note);
                     }
                 }
+                mSysuiColorExtractor.setMediaBackgroundColor(mColorSchemeTransition.getAccentPrimary().getTargetColor());
                 Trace.endAsyncSection(traceName, traceCookie);
             });
         });
@@ -1055,7 +1202,11 @@ public class MediaControlPanel {
                     Log.d(TAG, "Cannot load wallpaper color from a recycled bitmap");
                     return null;
                 }
-                return WallpaperColors.fromBitmap(artworkBitmap);
+                try {
+                    return WallpaperColors.fromBitmap(artworkBitmap);
+                } catch (Exception e) {
+                    return null;
+                }
             } else {
                 Drawable artworkDrawable = artworkIcon.loadDrawable(mContext);
                 if (artworkDrawable != null) {
@@ -1093,7 +1244,7 @@ public class MediaControlPanel {
 
     private LayerDrawable setupGradientColorOnDrawable(Drawable albumArt, GradientDrawable gradient,
             ColorScheme mutableColorScheme, float startAlpha, float endAlpha) {
-        gradient.setColors(new int[] {
+        gradient.setColors(new int[]{
                 ColorUtilKt.getColorWithAlpha(
                         MediaColorSchemesKt.backgroundStartFromScheme(mutableColorScheme),
                         startAlpha),
@@ -1101,7 +1252,7 @@ public class MediaControlPanel {
                         MediaColorSchemesKt.backgroundEndFromScheme(mutableColorScheme),
                         endAlpha),
         });
-        return new LayerDrawable(new Drawable[] { albumArt, gradient });
+        return new LayerDrawable(new Drawable[]{albumArt, gradient});
     }
 
     private void scaleTransitionDrawableLayer(TransitionDrawable transitionDrawable, int layer,
@@ -1131,14 +1282,17 @@ public class MediaControlPanel {
         ConstraintSet collapsedSet = mMediaViewController.getCollapsedLayout();
         if (semanticActions != null) {
             // Hide all the generic buttons
-            for (ImageButton b: genericButtons) {
+            for (ImageButton b : genericButtons) {
                 setVisibleAndAlpha(collapsedSet, b.getId(), false);
                 setVisibleAndAlpha(expandedSet, b.getId(), false);
             }
 
+            int limit = mActionsLimit;
             for (int id : SEMANTIC_ACTIONS_ALL) {
                 ImageButton button = mMediaViewHolder.getAction(id);
                 MediaAction action = semanticActions.getActionById(id);
+                if (id == R.id.action0 || id == R.id.action1)
+                    if (limit-- <= 0) action = null;
                 setSemanticButton(button, action, semanticActions);
             }
         } else {
@@ -1150,7 +1304,9 @@ public class MediaControlPanel {
 
             // Set all the generic buttons
             List<Integer> actionsWhenCollapsed = data.getActionsToShowInCompact();
-            List<MediaAction> actions = data.getActions();
+            List<MediaAction> actionsFull = getNotificationActions(data.getActions(), mActivityStarter);
+            List<MediaAction> actions = actionsFull.subList(
+                    0, Math.min(actionsFull.size(), mActionsLimit));
             int i = 0;
             for (; i < actions.size() && i < genericButtons.size(); i++) {
                 boolean showInCompact = actionsWhenCollapsed.contains(i);
@@ -1261,13 +1417,15 @@ public class MediaControlPanel {
 
                         action.run();
 
-                        mMultiRippleController.play(createTouchRippleAnimation(button));
+                        if (mShowRipple) {
+                            mMultiRippleController.play(createTouchRippleAnimation(button));
 
-                        if (icon instanceof Animatable) {
-                            ((Animatable) icon).start();
-                        }
-                        if (bgDrawable instanceof Animatable) {
-                            ((Animatable) bgDrawable).start();
+                            if (icon instanceof Animatable) {
+                                ((Animatable) icon).start();
+                            }
+                            if (bgDrawable instanceof Animatable) {
+                                ((Animatable) bgDrawable).start();
+                            }
                         }
                     }
                 });
@@ -1277,7 +1435,7 @@ public class MediaControlPanel {
         }
     }
 
-    private RippleAnimation createTouchRippleAnimation(ImageButton button) {
+    private RippleAnimation createTouchRippleAnimation(View button) {
         float maxSize = mMediaViewHolder.getMultiRippleView().getWidth() * 2;
         return new RippleAnimation(
                 new RippleAnimationConfig(
@@ -1300,7 +1458,7 @@ public class MediaControlPanel {
     }
 
     private boolean shouldPlayTurbulenceNoise() {
-        return mButtonClicked && !mWasPlaying && isPlaying();
+        return mButtonClicked && !mWasPlaying && isPlaying() && mShowTurbulence;
     }
 
     private TurbulenceNoiseAnimationConfig createTurbulenceNoiseConfig() {
@@ -1334,6 +1492,7 @@ public class MediaControlPanel {
                 /* shouldInverseNoiseLuminosity= */ false
         );
     }
+
     private void clearButton(final ImageButton button) {
         button.setImageDrawable(null);
         button.setContentDescription(null);
@@ -1349,8 +1508,9 @@ public class MediaControlPanel {
         ConstraintSet expandedSet = mMediaViewController.getExpandedLayout();
         boolean showInCompact = SEMANTIC_ACTIONS_COMPACT.contains(buttonId);
         boolean hideWhenScrubbing = SEMANTIC_ACTIONS_HIDE_WHEN_SCRUBBING.contains(buttonId);
-        boolean shouldBeHiddenDueToScrubbing =
-                scrubbingTimeViewsEnabled(semanticActions) && hideWhenScrubbing && mIsScrubbing;
+        boolean shouldBeHiddenDueToScrubbing = hideWhenScrubbing &&
+                (mTimeAsNext && mAlwaysOnTime || scrubbingTimeViewsEnabled(semanticActions)
+                && mIsScrubbing && !mAlwaysOnTime);
         boolean visible = mediaAction != null && !shouldBeHiddenDueToScrubbing;
 
         int notVisibleValue;
@@ -1380,13 +1540,56 @@ public class MediaControlPanel {
 
     private void bindScrubbingTime(MediaData data) {
         ConstraintSet expandedSet = mMediaViewController.getExpandedLayout();
-        int elapsedTimeId = mMediaViewHolder.getScrubbingElapsedTimeView().getId();
-        int totalTimeId = mMediaViewHolder.getScrubbingTotalTimeView().getId();
+        TextView elapsedTime = mMediaViewHolder.getScrubbingElapsedTimeView();
+        TextView totalTime = mMediaViewHolder.getScrubbingTotalTimeView();
 
-        boolean visible = scrubbingTimeViewsEnabled(data.getSemanticActions()) && mIsScrubbing;
-        setVisibleAndAlpha(expandedSet, elapsedTimeId, visible);
-        setVisibleAndAlpha(expandedSet, totalTimeId, visible);
+        boolean visible = scrubbingTimeViewsEnabled(data.getSemanticActions())
+                && (mIsScrubbing || mAlwaysOnTime);
+        setVisibleAndAlpha(expandedSet, elapsedTime.getId(), visible);
+        setVisibleAndAlpha(expandedSet, totalTime.getId(), visible);
         // Collapsed view is always GONE as set in XML, so doesn't need to be updated dynamically
+
+        updateTimeAsNextListeners(data, elapsedTime, totalTime);
+    }
+
+    private void updateTimeAsNextListeners(MediaData data, TextView elapsedTime, TextView totalTime) {
+        if (data == null || data.getSemanticActions() == null) return;
+
+        MediaAction elapsedAction = null;
+        MediaAction totalAction = null;
+
+        if (mAlwaysOnTime && mTimeAsNext) {
+            elapsedAction = data.getSemanticActions().getActionById(R.id.actionPrev);
+            totalAction = data.getSemanticActions().getActionById(R.id.actionNext);
+        }
+
+        registerTimeAsNextClickListener(elapsedTime, elapsedAction);
+        registerTimeAsNextClickListener(totalTime, totalAction);
+    }
+
+    private void registerTimeAsNextClickListener(TextView view, MediaAction action) {
+        final boolean isEnabled = action != null;
+        view.setClickable(isEnabled);
+        view.setFocusable(isEnabled);
+        if (!isEnabled) {
+            view.setOnClickListener(null);
+            return;
+        }
+        view.setOnClickListener(v -> {
+            if (!mFalsingManager.isFalseTap(FalsingManager.MODERATE_PENALTY)) {
+                mLogger.logTapAction(view.getId(), mUid, mPackageName, mInstanceId);
+                logSmartspaceCardReported(SMARTSPACE_CARD_CLICK_EVENT);
+                // Used to determine whether to play turbulence noise.
+                mWasPlaying = isPlaying();
+                mButtonClicked = true;
+
+                action.getAction().run();
+
+                if (mShowRipple) {
+                    mMultiRippleController.play(createTouchRippleAnimation(view));
+                }
+            }
+        });
     }
 
     private boolean scrubbingTimeViewsEnabled(@Nullable MediaButton semanticActions) {
@@ -1409,19 +1612,33 @@ public class MediaControlPanel {
 
         // TODO(b/174236650): Make sure that the carousel indicator also fades out.
         // TODO(b/174236650): Instrument the animation to measure jank.
-        return new GhostedViewTransitionAnimatorController(player,
-                InteractionJankMonitor.CUJ_SHADE_APP_LAUNCH_FROM_MEDIA_PLAYER) {
-            @Override
-            protected float getCurrentTopCornerRadius() {
-                return mContext.getResources().getDimension(R.dimen.notification_corner_radius);
-            }
+        final ActivityTransitionAnimator.Controller controller =
+                new GhostedViewTransitionAnimatorController(player,
+                        InteractionJankMonitor.CUJ_SHADE_APP_LAUNCH_FROM_MEDIA_PLAYER) {
+                    @Override
+                    protected float getCurrentTopCornerRadius() {
+                        return mContext.getResources().getDimension(
+                                R.dimen.notification_corner_radius);
+                    }
 
-            @Override
-            protected float getCurrentBottomCornerRadius() {
-                // TODO(b/184121838): Make IlluminationDrawable support top and bottom radius.
-                return getCurrentTopCornerRadius();
-            }
-        };
+                    @Override
+                    protected float getCurrentBottomCornerRadius() {
+                        // TODO(b/184121838): Make IlluminationDrawable support top and bottom
+                        //  radius.
+                        return getCurrentTopCornerRadius();
+                    }
+                };
+
+        // When on the hub, wrap in the communal animation controller to ensure we exit the hub
+        // at the proper stage of the animation.
+        if (communalHub()
+                && mMediaViewController.getCurrentEndLocation()
+                == MediaHierarchyManager.LOCATION_COMMUNAL_HUB) {
+            mCommunalSceneInteractor.setIsLaunchingWidget(true);
+            return new CommunalTransitionAnimatorController(controller,
+                    mCommunalSceneInteractor);
+        }
+        return controller;
     }
 
     /** Bind this recommendation view based on the given data. */
@@ -1922,6 +2139,7 @@ public class MediaControlPanel {
 
     /**
      * Get the surface given the current end location for MediaViewController
+     *
      * @return surface used for Smartspace logging
      */
     protected int getSurfaceForSmartspaceLogging() {
@@ -1952,5 +2170,22 @@ public class MediaControlPanel {
                 interactedSubcardRank,
                 interactedSubcardCardinality);
     }
+
+    /** 
+      * Here is to solve the problem that the panel title and artist are not syncing in time 
+      * @author alphi-wang-cn
+      */ 
+     private final MediaController.Callback mCb = new MediaController.Callback() { 
+         @Override 
+         public void onMetadataChanged(MediaMetadata metadata) { 
+            if (metadata != null) { 
+                 String title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE); 
+                 String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST); 
+                 mMediaViewHolder.getTitleText().setText(title); 
+                 mMediaViewHolder.getArtistText().setText(artist); 
+                 mMediaViewController.refreshState();        // measure view and refresh the state 
+            }
+         } 
+     };
 }
 

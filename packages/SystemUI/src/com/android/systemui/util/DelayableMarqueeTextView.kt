@@ -18,7 +18,14 @@ package com.android.systemui.util
 
 import android.content.Context
 import android.util.AttributeSet
+import android.util.Log
+import androidx.appcompat.widget.AppCompatTextView
 import com.android.systemui.res.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class DelayableMarqueeTextView @JvmOverloads constructor(
     context: Context,
@@ -31,49 +38,68 @@ class DelayableMarqueeTextView @JvmOverloads constructor(
     private var wantsMarquee = false
     private var marqueeBlocked = true
 
-    private val enableMarquee = Runnable {
-        if (wantsMarquee) {
-            marqueeBlocked = false
-            startMarquee()
-        }
-    }
+    private val coroutineScope = CoroutineScope(Dispatchers.Default)
+    private var marqueeJob: Job? = null
 
     init {
-        val typedArray = context.theme.obtainStyledAttributes(
+        try {
+            val typedArray = context.theme.obtainStyledAttributes(
                 attrs,
                 R.styleable.DelayableMarqueeTextView,
                 defStyleAttr,
                 defStyleRes
-        )
-        marqueeDelay = typedArray.getInteger(
+            )
+            marqueeDelay = typedArray.getInteger(
                 R.styleable.DelayableMarqueeTextView_marqueeDelay,
                 DEFAULT_MARQUEE_DELAY.toInt()
-        ).toLong()
-        typedArray.recycle()
+            ).toLong()
+            typedArray.recycle()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing DelayableMarqueeTextView: ${e.message}", e)
+        }
     }
 
     override fun startMarquee() {
-        if (!isSelected) {
+        if (!isSelected || !isAttachedToWindow) {
             return
         }
         wantsMarquee = true
         if (marqueeBlocked) {
-            if (handler?.hasCallbacks(enableMarquee) == false) {
-                postDelayed(enableMarquee, marqueeDelay)
+            if (marqueeJob?.isActive != true) {
+                marqueeJob = coroutineScope.launch {
+                    delay(marqueeDelay)
+                    if (wantsMarquee && isAttachedToWindow) {
+                        marqueeBlocked = false
+                        startMarqueeOnMainThread()
+                    }
+                }
             }
             return
         }
         super.startMarquee()
     }
 
+    private fun startMarqueeOnMainThread() {
+        CoroutineScope(Dispatchers.Main).launch {
+            super@DelayableMarqueeTextView.startMarquee()
+        }
+    }
+
     override fun stopMarquee() {
-        handler?.removeCallbacks(enableMarquee)
+        marqueeJob?.cancel()
         wantsMarquee = false
         marqueeBlocked = true
         super.stopMarquee()
     }
 
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        marqueeJob?.cancel()
+        marqueeBlocked = true
+    }
+
     companion object {
+        private const val TAG = "DelayableMarqueeTextView"
         const val DEFAULT_MARQUEE_DELAY = 2000L
     }
 }

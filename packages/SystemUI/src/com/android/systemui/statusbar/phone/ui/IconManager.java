@@ -16,29 +16,30 @@
 
 package com.android.systemui.statusbar.phone.ui;
 
-import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_BLUETOOTH;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_BINDABLE;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_ICON;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_MOBILE_NEW;
+import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_NETWORK_TRAFFIC;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_WIFI_NEW;
 
 import android.annotation.Nullable;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
-import androidx.annotation.VisibleForTesting;
-
 import com.android.internal.statusbar.StatusBarIcon;
+import com.android.internal.statusbar.StatusBarIcon.Shape;
 import com.android.systemui.demomode.DemoModeCommandReceiver;
+import com.android.systemui.modes.shared.ModesUiIcons;
+import com.android.systemui.res.R;
 import com.android.systemui.statusbar.BaseStatusBarFrameLayout;
-import com.android.systemui.statusbar.StatusBarBluetoothView;
 import com.android.systemui.statusbar.StatusBarIconView;
 import com.android.systemui.statusbar.StatusIconDisplayable;
 import com.android.systemui.statusbar.connectivity.ui.MobileContextProvider;
 import com.android.systemui.statusbar.phone.DemoStatusIcons;
-import com.android.systemui.statusbar.phone.PhoneStatusBarPolicy.BluetoothIconState;
 import com.android.systemui.statusbar.phone.StatusBarIconHolder;
 import com.android.systemui.statusbar.phone.StatusBarIconHolder.BindableIconHolder;
 import com.android.systemui.statusbar.phone.StatusBarLocation;
@@ -50,6 +51,7 @@ import com.android.systemui.statusbar.pipeline.shared.ui.view.ModernStatusBarVie
 import com.android.systemui.statusbar.pipeline.wifi.ui.WifiUiAdapter;
 import com.android.systemui.statusbar.pipeline.wifi.ui.view.ModernStatusBarWifiView;
 import com.android.systemui.statusbar.pipeline.wifi.ui.viewmodel.LocationBasedWifiViewModel;
+import com.android.systemui.statusbar.policy.NetworkTrafficSB;
 import com.android.systemui.util.Assert;
 
 import java.util.ArrayList;
@@ -85,6 +87,9 @@ public class IconManager implements DemoModeCommandReceiver {
 
     protected ArrayList<String> mBlockList = new ArrayList<>();
 
+    private final boolean mNewIconStyle;
+    private final boolean mShowNotificationCount;
+
     public IconManager(
             ViewGroup group,
             StatusBarLocation location,
@@ -96,6 +101,12 @@ public class IconManager implements DemoModeCommandReceiver {
         mMobileContextProvider = mobileContextProvider;
         mContext = group.getContext();
         mLocation = location;
+
+        mNewIconStyle = Settings.System.getIntForUser(mContext.getContentResolver(),
+            Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1;
+        mShowNotificationCount = Settings.System.getIntForUser(mContext.getContentResolver(),
+            Settings.System.STATUSBAR_NOTIF_COUNT, 0,
+            UserHandle.USER_CURRENT) == 1;
 
         reloadDimens();
 
@@ -154,17 +165,18 @@ public class IconManager implements DemoModeCommandReceiver {
             case TYPE_BINDABLE ->
                 // Safe cast, since only BindableIconHolders can set this tag on themselves
                 addBindableIcon((BindableIconHolder) holder, index);
-            case TYPE_BLUETOOTH -> addBluetoothIcon(index, slot, blocked, holder.getBluetoothState());
+            case TYPE_NETWORK_TRAFFIC -> addNetworkTraffic(index, slot);
             default -> null;
         };
     }
 
-    @VisibleForTesting
     protected StatusBarIconView addIcon(int index, String slot, boolean blocked,
             StatusBarIcon icon) {
         StatusBarIconView view = onCreateStatusBarIconView(slot, blocked);
+        view.setIconStyle(mNewIconStyle);
+        view.setShowCount(mShowNotificationCount);
         view.set(icon);
-        mGroup.addView(view, index, onCreateLayoutParams());
+        mGroup.addView(view, index, onCreateLayoutParams(icon.shape));
         return view;
     }
 
@@ -178,16 +190,22 @@ public class IconManager implements DemoModeCommandReceiver {
             int index) {
         mBindableIcons.put(holder.getSlot(), holder);
         ModernStatusBarView view = holder.getInitializer().createAndBind(mContext);
-        mGroup.addView(view, index, onCreateLayoutParams());
+        mGroup.addView(view, index, onCreateLayoutParams(Shape.WRAP_CONTENT));
         if (mIsInDemoMode) {
             mDemoStatusIcons.addBindableIcon(holder);
         }
         return view;
     }
 
+    protected NetworkTrafficSB addNetworkTraffic(int index, String slot) {
+        NetworkTrafficSB view = onCreateNetworkTraffic(slot);
+        mGroup.addView(view, index, onCreateLayoutParams(Shape.WRAP_CONTENT));
+        return view;
+    }
+    
     protected StatusIconDisplayable addNewWifiIcon(int index, String slot) {
         ModernStatusBarWifiView view = onCreateModernStatusBarWifiView(slot);
-        mGroup.addView(view, index, onCreateLayoutParams());
+        mGroup.addView(view, index, onCreateLayoutParams(Shape.WRAP_CONTENT));
 
         if (mIsInDemoMode) {
             mDemoStatusIcons.addModernWifiView(mWifiViewModel);
@@ -203,7 +221,7 @@ public class IconManager implements DemoModeCommandReceiver {
             int subId
     ) {
         BaseStatusBarFrameLayout view = onCreateModernStatusBarMobileView(slot, subId);
-        mGroup.addView(view, index, onCreateLayoutParams());
+        mGroup.addView(view, index, onCreateLayoutParams(Shape.WRAP_CONTENT));
 
         if (mIsInDemoMode) {
             Context mobileContext = mMobileContextProvider
@@ -214,14 +232,6 @@ public class IconManager implements DemoModeCommandReceiver {
                     subId);
         }
 
-        return view;
-    }
-
-    protected StatusBarBluetoothView addBluetoothIcon(
-            int index, String slot, boolean blocked, BluetoothIconState state) {
-        StatusBarBluetoothView view = onCreateStatusBarBluetoothView(slot, blocked);
-        view.applyBluetoothState(state);
-        mGroup.addView(view, index, onCreateLayoutParams());
         return view;
     }
 
@@ -245,15 +255,18 @@ public class IconManager implements DemoModeCommandReceiver {
                 );
     }
 
-    private StatusBarBluetoothView onCreateStatusBarBluetoothView(
-            String slot, boolean blocked) {
-        StatusBarBluetoothView view =
-                StatusBarBluetoothView.fromContext(mContext, slot, blocked);
-        return view;
-    }
+    protected LinearLayout.LayoutParams onCreateLayoutParams(Shape shape) {
+        int width = ModesUiIcons.isEnabled() && shape == StatusBarIcon.Shape.FIXED_SPACE
+                ? mIconSize
+                : ViewGroup.LayoutParams.WRAP_CONTENT;
 
-    protected LinearLayout.LayoutParams onCreateLayoutParams() {
-        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, mIconSize);
+        return new LinearLayout.LayoutParams(width, mIconSize);
+    }    
+
+    private NetworkTrafficSB onCreateNetworkTraffic(String slot) {
+        NetworkTrafficSB view = new NetworkTrafficSB(mContext);
+        view.setPadding(2, 0, 2, 0);
+        return view;
     }
 
     protected void destroy() {
@@ -275,6 +288,13 @@ public class IconManager implements DemoModeCommandReceiver {
     /** Called once an icon has been set. */
     public void onSetIcon(int viewIndex, StatusBarIcon icon) {
         StatusBarIconView view = (StatusBarIconView) mGroup.getChildAt(viewIndex);
+        if (ModesUiIcons.isEnabled()) {
+            ViewGroup.LayoutParams current = view.getLayoutParams();
+            ViewGroup.LayoutParams desired = onCreateLayoutParams(icon.shape);
+            if (desired.width != current.width || desired.height != current.height) {
+                view.setLayoutParams(desired);
+            }
+        }
         view.set(icon);
     }
 
@@ -287,20 +307,11 @@ public class IconManager implements DemoModeCommandReceiver {
             case TYPE_MOBILE_NEW:
             case TYPE_WIFI_NEW:
             case TYPE_BINDABLE:
+            case TYPE_NETWORK_TRAFFIC:
                 // Nothing, the new icons update themselves
-                return;
-            case TYPE_BLUETOOTH:
-                onSetBluetoothIcon(viewIndex, holder.getBluetoothState());
                 return;
             default:
                 break;
-        }
-    }
-
-    public void onSetBluetoothIcon(int viewIndex, BluetoothIconState state) {
-        StatusBarBluetoothView view = (StatusBarBluetoothView) mGroup.getChildAt(viewIndex);
-        if (view != null) {
-            view.applyBluetoothState(state);
         }
     }
 

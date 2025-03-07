@@ -42,9 +42,9 @@ import androidx.test.filters.SmallTest;
 import com.android.settingslib.graph.SignalDrawable;
 import com.android.settingslib.mobile.TelephonyIcons;
 import com.android.settingslib.net.DataUsageController;
-import com.android.systemui.res.R;
 import com.android.systemui.dump.DumpManager;
 import com.android.systemui.log.LogBuffer;
+import com.android.systemui.res.R;
 import com.android.systemui.statusbar.pipeline.StatusBarPipelineFlags;
 import com.android.systemui.statusbar.policy.DeviceProvisionedController;
 import com.android.systemui.util.CarrierConfigTracker;
@@ -91,6 +91,7 @@ public class NetworkControllerSignalTest extends NetworkControllerBaseTest {
                 mWifiStatusTrackerFactory,
                 mMobileFactory,
                 mMainHandler,
+                mock(DumpManager.class),
                 mock(LogBuffer.class)
         );
         TestableLooper.get(this).processAllMessages();
@@ -128,6 +129,7 @@ public class NetworkControllerSignalTest extends NetworkControllerBaseTest {
                 mWifiStatusTrackerFactory,
                 mMobileFactory,
                 mMainHandler,
+                mock(DumpManager.class),
                 mock(LogBuffer.class));
         TestableLooper.get(this).processAllMessages();
 
@@ -163,6 +165,7 @@ public class NetworkControllerSignalTest extends NetworkControllerBaseTest {
                 mWifiStatusTrackerFactory,
                 mMobileFactory,
                 mMainHandler,
+                mock(DumpManager.class),
                 mock(LogBuffer.class));
         setupNetworkController();
 
@@ -201,6 +204,7 @@ public class NetworkControllerSignalTest extends NetworkControllerBaseTest {
                 mWifiStatusTrackerFactory,
                 mMobileFactory,
                 mMainHandler,
+                mock(DumpManager.class),
                 mock(LogBuffer.class));
         mNetworkController.registerListeners();
 
@@ -287,6 +291,7 @@ public class NetworkControllerSignalTest extends NetworkControllerBaseTest {
                 mWifiStatusTrackerFactory,
                 mMobileFactory,
                 mMainHandler,
+                mock(DumpManager.class),
                 mock(LogBuffer.class));
         setupNetworkController();
 

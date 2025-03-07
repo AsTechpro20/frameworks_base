@@ -40,6 +40,12 @@ interface ShadeViewController {
     /** Sets the alpha value of the shade to a value between 0 and 255. */
     @Deprecated("No longer supported. Do not add new calls to this.")
     fun setAlpha(alpha: Int, animate: Boolean)
+    
+    /**
+     * Returns whether the shade height is greater than zero or the shade is expecting a synthesized
+     * down event.
+     */
+    val isPanelExpanded: Boolean
 
     /**
      * Sets the runnable to run after the alpha change animation completes.
@@ -75,6 +81,8 @@ interface ShadeViewController {
     /** Sends an external (e.g. Status Bar) intercept touch event to the Shade touch handler. */
     fun handleExternalInterceptTouch(event: MotionEvent): Boolean
 
+    fun fling(vel: Float, expand: Boolean, expandBecauseOfFalsing: Boolean)
+
     /**
      * Triggered when an input focus transfer gesture has started.
      *
@@ -101,6 +109,15 @@ interface ShadeViewController {
     /** Returns the ShadeFoldAnimator. */
     @Deprecated("This interface is deprecated in Scene Container")
     val shadeFoldAnimator: ShadeFoldAnimator
+    
+    /** island visibility  */
+    fun showIsland(show: Boolean)
+
+    /** Blocks gestural navigation */
+    fun setBlockedGesturalNavigation(blocked: Boolean)
+
+    fun getScrollerLayoutController(): com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayoutController?
+    fun getKeyguardBottomAreaView(): com.android.systemui.statusbar.phone.KeyguardBottomAreaView?
 
     companion object {
         /**

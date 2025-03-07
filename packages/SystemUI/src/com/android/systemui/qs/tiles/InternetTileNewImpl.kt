@@ -21,6 +21,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.widget.Switch
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.android.internal.logging.MetricsLogger
 import com.android.systemui.animation.Expandable
 import com.android.systemui.dagger.qualifiers.Background
@@ -34,17 +37,22 @@ import com.android.systemui.qs.QsEventLogger
 import com.android.systemui.qs.logging.QSLogger
 import com.android.systemui.qs.tileimpl.QSTileImpl
 import com.android.systemui.qs.tiles.dialog.InternetDialogManager
+import com.android.systemui.qs.tiles.dialog.WifiStateWorker
 import com.android.systemui.res.R
 import com.android.systemui.statusbar.connectivity.AccessPointController
 import com.android.systemui.statusbar.pipeline.shared.ui.binder.InternetTileBinder
 import com.android.systemui.statusbar.pipeline.shared.ui.model.InternetTileModel
 import com.android.systemui.statusbar.pipeline.shared.ui.viewmodel.InternetTileViewModel
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import javax.inject.Inject
 
 class InternetTileNewImpl
 @Inject
 constructor(
     host: QSHost,
+    keyguardStateController: KeyguardStateController,
     uiEventLogger: QsEventLogger,
     @Background backgroundLooper: Looper,
     @Main private val mainHandler: Handler,
@@ -55,9 +63,10 @@ constructor(
     qsLogger: QSLogger,
     viewModel: InternetTileViewModel,
     private val internetDialogManager: InternetDialogManager,
+    private val wifiStateWorker: WifiStateWorker,
     private val accessPointController: AccessPointController,
 ) :
-    QSTileImpl<QSTile.BooleanState>(
+    SecureQSTile<QSTile.BooleanState>(
         host,
         uiEventLogger,
         backgroundLooper,
@@ -66,33 +75,63 @@ constructor(
         metricsLogger,
         statusBarStateController,
         activityStarter,
-        qsLogger
+        qsLogger,
+        keyguardStateController,
     ) {
     private var model: InternetTileModel = viewModel.tileModel.value
+    private var canConfigMobileData: Boolean = false
+    private var canConfigWifi: Boolean = false
+    private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     init {
         InternetTileBinder.bind(lifecycle, viewModel.tileModel) { newModel ->
             model = newModel
             refreshState()
         }
+        
+        lifecycle.addObserver(object : LifecycleEventObserver {
+            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    prefetchConfigData()
+                }
+            }
+        })
     }
 
     override fun getTileLabel(): CharSequence =
         mContext.getString(R.string.quick_settings_internet_label)
 
     override fun newTileState(): QSTile.BooleanState {
-        return QSTile.BooleanState().also { it.forceExpandIcon = true }
+        return QSTile.BooleanState().also {
+            it.forceExpandIcon = true
+            it.handlesSecondaryClick = true
+        }
     }
 
-    override fun handleClick(expandable: Expandable?) {
-        mainHandler.post {
-            internetDialogManager.create(
-                aboveStatusBar = true,
-                accessPointController.canConfigMobileData(),
-                accessPointController.canConfigWifi(),
-                expandable,
-            )
+    override fun handleClick(expandable: Expandable?, keyguardShowing: Boolean) {
+        if (checkKeyguard(expandable, keyguardShowing)) {
+            return
         }
+        
+        backgroundExecutor.execute {
+            val mobileData = accessPointController.canConfigMobileData()
+            val wifi = accessPointController.canConfigWifi()
+
+            mainHandler.post {
+                internetDialogManager.create(
+                    aboveStatusBar = true,
+                    mobileData,
+                    wifi,
+                    expandable,
+                )
+            }
+        }
+    }
+
+    override fun secondaryClick(expandable: Expandable?) {
+        // TODO(b/358352265): Figure out the correct action for the secondary click
+        // Toggle wifi
+        wifiStateWorker.isWifiEnabled = !wifiStateWorker.isWifiEnabled
     }
 
     override fun handleUpdateState(state: QSTile.BooleanState, arg: Any?) {
@@ -103,6 +142,13 @@ constructor(
     }
 
     override fun getLongClickIntent(): Intent = WIFI_SETTINGS
+    
+    private fun prefetchConfigData() {
+        backgroundExecutor.execute {
+            canConfigMobileData = accessPointController.canConfigMobileData()
+            canConfigWifi = accessPointController.canConfigWifi()
+        }
+    }
 
     companion object {
         private val WIFI_SETTINGS = Intent(Settings.ACTION_WIFI_SETTINGS)

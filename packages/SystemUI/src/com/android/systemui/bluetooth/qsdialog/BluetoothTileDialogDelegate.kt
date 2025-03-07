@@ -30,7 +30,6 @@ import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.ProgressBar
-import android.widget.Switch
 import android.widget.TextView
 import androidx.annotation.StringRes
 import androidx.recyclerview.widget.AsyncListDiffer
@@ -54,6 +53,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import com.google.android.material.materialswitch.MaterialSwitch
 
 /** Dialog for showing active, connected and saved bluetooth devices. */
 class BluetoothTileDialogDelegate
@@ -129,8 +129,26 @@ internal constructor(
         getPairNewDeviceButton(dialog).setOnClickListener {
             bluetoothTileDialogCallback.onPairNewDeviceClicked(it)
         }
-        getAudioSharingButtonView(dialog).setOnClickListener {
-            bluetoothTileDialogCallback.onAudioSharingButtonClicked(it)
+        getAudioSharingButtonView(dialog).apply {
+            setOnClickListener { bluetoothTileDialogCallback.onAudioSharingButtonClicked(it) }
+            accessibilityDelegate =
+                object : AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(
+                        host: View,
+                        info: AccessibilityNodeInfo
+                    ) {
+                        super.onInitializeAccessibilityNodeInfo(host, info)
+                        info.addAction(
+                            AccessibilityAction(
+                                AccessibilityAction.ACTION_CLICK.id,
+                                context.getString(
+                                    R.string
+                                        .quick_settings_bluetooth_audio_sharing_button_accessibility
+                                )
+                            )
+                        )
+                    }
+                }
         }
         getScrollViewContent(dialog).apply {
             minimumHeight =
@@ -212,11 +230,13 @@ internal constructor(
     internal fun onAudioSharingButtonUpdated(
         dialog: SystemUIDialog,
         visibility: Int,
-        label: String?
+        label: String?,
+        isActive: Boolean
     ) {
         getAudioSharingButtonView(dialog).apply {
             this.visibility = visibility
             label?.let { text = it }
+            this.isActivated = isActive
         }
     }
 
@@ -239,7 +259,7 @@ internal constructor(
         }
     }
 
-    private fun getToggleView(dialog: SystemUIDialog): Switch {
+    private fun getToggleView(dialog: SystemUIDialog): MaterialSwitch {
         return dialog.requireViewById(R.id.bluetooth_toggle)
     }
 
@@ -259,7 +279,7 @@ internal constructor(
         return dialog.requireViewById(R.id.device_list)
     }
 
-    private fun getAutoOnToggle(dialog: SystemUIDialog): Switch {
+    private fun getAutoOnToggle(dialog: SystemUIDialog): MaterialSwitch {
         return dialog.requireViewById(R.id.bluetooth_auto_on_toggle)
     }
 
@@ -370,6 +390,7 @@ internal constructor(
             private val iconView = view.requireViewById<ImageView>(R.id.bluetooth_device_icon)
             private val iconGear = view.requireViewById<ImageView>(R.id.gear_icon_image)
             private val gearView = view.requireViewById<View>(R.id.gear_icon)
+            private val divider = view.requireViewById<View>(R.id.divider)
 
             internal fun bind(
                 item: DeviceItem,
@@ -401,6 +422,8 @@ internal constructor(
                     }
 
                     iconGear.apply { drawable?.let { it.mutate()?.setTint(tintColor) } }
+
+                    divider.setBackgroundColor(tintColor)
 
                     // update text styles
                     nameView.setTextAppearance(
@@ -440,7 +463,6 @@ internal constructor(
 
     internal companion object {
         const val MIN_HEIGHT_CHANGE_INTERVAL_MS = 800L
-        const val MAX_DEVICE_ITEM_ENTRY = 3
         const val ACTION_BLUETOOTH_DEVICE_DETAILS =
             "com.android.settings.BLUETOOTH_DEVICE_DETAIL_SETTINGS"
         const val ACTION_PREVIOUSLY_CONNECTED_DEVICE =

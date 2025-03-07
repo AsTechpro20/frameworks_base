@@ -25,9 +25,12 @@ import com.android.systemui.log.DebugLogger.debugLog
 import com.android.systemui.res.R
 import com.android.systemui.screenshot.ActionIntentCreator.createDelete
 import com.android.systemui.screenshot.ActionIntentCreator.createEdit
+import com.android.systemui.screenshot.ActionIntentCreator.createLens
 import com.android.systemui.screenshot.ActionIntentCreator.createShareWithSubject
+import com.android.systemui.screenshot.ActionIntentCreator.createView
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_DELETE_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_EDIT_TAPPED
+import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_LENS_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_PREVIEW_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_SHARE_TAPPED
 import com.android.systemui.screenshot.ui.viewmodel.ActionButtonAppearance
@@ -86,7 +89,7 @@ constructor(
                 uiEventLogger.log(SCREENSHOT_PREVIEW_TAPPED, 0, request.packageNameString)
                 onDeferrableActionTapped { result ->
                     actionExecutor.startSharedTransition(
-                        createEdit(result.uri, context),
+                        createView(result.uri, context),
                         result.user,
                         true
                     )
@@ -97,7 +100,7 @@ constructor(
         actionsCallback.provideActionButton(
             ActionButtonAppearance(
                 AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_share),
-                null, // context.resources.getString(R.string.screenshot_share_label),
+                context.resources.getString(R.string.screenshot_share_label),
                 context.resources.getString(R.string.screenshot_share_description),
             ),
             showDuringEntrance = true,
@@ -116,7 +119,7 @@ constructor(
         actionsCallback.provideActionButton(
             ActionButtonAppearance(
                 AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_edit),
-                null, // context.resources.getString(R.string.screenshot_edit_label),
+                context.resources.getString(R.string.screenshot_edit_label),
                 context.resources.getString(R.string.screenshot_edit_description),
             ),
             showDuringEntrance = true,
@@ -135,7 +138,7 @@ constructor(
         actionsCallback.provideActionButton(
             ActionButtonAppearance(
                 AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_delete),
-                null, // context.resources.getString(R.string.screenshot_delete_label),
+                context.resources.getString(R.string.screenshot_delete_label),
                 context.resources.getString(R.string.screenshot_delete_description),
             ),
             showDuringEntrance = true,
@@ -148,6 +151,23 @@ constructor(
                 )
             }
         }
+
+        actionsCallback.provideActionButton(
+            ActionButtonAppearance(
+                AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_lens),
+                context.resources.getString(R.string.screenshot_lens_label),
+                context.resources.getString(R.string.screenshot_lens_label),
+            ),
+            showDuringEntrance = true,
+        ) {
+            debugLog(LogConfig.DEBUG_ACTIONS) { "Lens tapped" }
+            uiEventLogger.log(SCREENSHOT_LENS_TAPPED, 0, request.packageNameString)
+            onDeferrableActionTapped { result ->
+                actionExecutor.sendPendingIntent(
+                    createLens(result.uri, context, result.user)
+                )
+            }
+        }
     }
 
     override fun onScrollChipReady(onClick: Runnable) {
@@ -156,7 +176,7 @@ constructor(
             actionsCallback.provideActionButton(
                 ActionButtonAppearance(
                     AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_scroll),
-                    null, // context.resources.getString(R.string.screenshot_scroll_label),
+                    context.resources.getString(R.string.screenshot_scroll_label),
                     context.resources.getString(R.string.screenshot_scroll_label),
                 ),
                 showDuringEntrance = true,

@@ -19,7 +19,6 @@ package com.android.systemui.statusbar;
 import static android.app.StatusBarManager.DISABLE2_NONE;
 import static android.app.StatusBarManager.DISABLE_NONE;
 import static android.inputmethodservice.InputMethodService.BACK_DISPOSITION_DEFAULT;
-import static android.inputmethodservice.InputMethodService.IME_INVISIBLE;
 import static android.view.Display.INVALID_DISPLAY;
 
 import android.annotation.Nullable;
@@ -38,6 +37,7 @@ import android.hardware.biometrics.IBiometricSysuiReceiver;
 import android.hardware.biometrics.PromptInfo;
 import android.hardware.fingerprint.IUdfpsRefreshRateRequestCallback;
 import android.inputmethodservice.InputMethodService.BackDispositionMode;
+import android.inputmethodservice.InputMethodService.ImeWindowVisibility;
 import android.media.INearbyMediaDevicesProvider;
 import android.media.MediaRoute2Info;
 import android.os.Binder;
@@ -51,6 +51,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.util.Pair;
 import android.util.SparseArray;
 import android.view.KeyEvent;
@@ -62,6 +63,7 @@ import android.view.accessibility.Flags;
 import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
 
+import com.android.internal.annotations.KeepForWeakReference;
 import com.android.internal.os.SomeArgs;
 import com.android.internal.statusbar.IAddTileResultCallback;
 import com.android.internal.statusbar.IStatusBar;
@@ -182,6 +184,12 @@ public class CommandQueue extends IStatusBar.Stub implements
     private static final int MSG_SET_SPLITSCREEN_FOCUS = 81 << MSG_SHIFT;
     private static final int MSG_TOGGLE_QUICK_SETTINGS_PANEL = 82 << MSG_SHIFT;
     private static final int MSG_TOGGLE_CAMERA_FLASH = 83 << MSG_SHIFT;
+    private static final int MSG_SET_BLOCKED_GESTURAL_NAVIGATION = 84 << MSG_SHIFT;
+    private static final int MSG_SCREEN_PINNING_STATE_CHANGED      = 85 << MSG_SHIFT;
+    private static final int MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED   = 86 << MSG_SHIFT;
+    private static final int MSG_KILL_FOREGROUND_APP = 87 << MSG_SHIFT;
+    private static final int MSG_TOGGLE_SETTINGS_PANEL = 88 << MSG_SHIFT;
+
     public static final int FLAG_EXCLUDE_NONE = 0;
     public static final int FLAG_EXCLUDE_SEARCH_PANEL = 1 << 0;
     public static final int FLAG_EXCLUDE_RECENTS_PANEL = 1 << 1;
@@ -192,19 +200,35 @@ public class CommandQueue extends IStatusBar.Stub implements
     private static final String SHOW_IME_SWITCHER_KEY = "showImeSwitcherKey";
 
     private final Object mLock = new Object();
-    private ArrayList<Callbacks> mCallbacks = new ArrayList<>();
-    private Handler mHandler = new H(Looper.getMainLooper());
+    private final ArrayList<Callbacks> mCallbacks = new ArrayList<>();
+    private final Handler mHandler = new H(Looper.getMainLooper());
     /** A map of display id - disable flag pair */
-    private SparseArray<Pair<Integer, Integer>> mDisplayDisabled = new SparseArray<>();
+    private final SparseArray<Pair<Integer, Integer>> mDisplayDisabled = new SparseArray<>();
     /**
      * The last ID of the display where IME window for which we received setImeWindowStatus
      * event.
      */
     private int mLastUpdatedImeDisplayId = INVALID_DISPLAY;
+    private final Context mContext;
     private final DisplayTracker mDisplayTracker;
     private final @Nullable CommandRegistry mRegistry;
     private final @Nullable DumpHandler mDumpHandler;
     private final @Nullable Lazy<PowerInteractor> mPowerInteractor;
+
+    @KeepForWeakReference
+    private final DisplayTracker.Callback mDisplayTrackerCallback = new DisplayTracker.Callback() {
+        @Override
+        public void onDisplayRemoved(int displayId) {
+            synchronized (mLock) {
+                mDisplayDisabled.remove(displayId);
+            }
+            // This callback is registered with {@link #mHandler} that already posts to run on
+            // main thread, so it is safe to dispatch directly.
+            for (int i = mCallbacks.size() - 1; i >= 0; i--) {
+                mCallbacks.get(i).onDisplayRemoved(displayId);
+            }
+        }
+    };
 
     /**
      * These methods are called back on the main thread.
@@ -250,18 +274,18 @@ public class CommandQueue extends IStatusBar.Stub implements
         /**
          * Called to toggle Quick Settings panel.
          */
-        default void toggleQuickSettingsPanel() { }
+        default void toggleQuickSettingsPanel() { }       
+        default void toggleSettingsPanel() { }
 
         /**
          * Called to notify IME window status changes.
          *
          * @param displayId The id of the display to notify.
-         * @param token IME token.
          * @param vis IME visibility.
-         * @param backDisposition Disposition mode of back button. It should be one of below flags:
+         * @param backDisposition Disposition mode of back button.
          * @param showImeSwitcher {@code true} to show IME switch button.
          */
-        default void setImeWindowStatus(int displayId, IBinder token,  int vis,
+        default void setImeWindowStatus(int displayId, @ImeWindowVisibility int vis,
                 @BackDispositionMode int backDisposition, boolean showImeSwitcher) { }
         default void showRecentApps(boolean triggeredFromAltTab) { }
         default void hideRecentApps(boolean triggeredFromAltTab, boolean triggeredFromHomeKey) { }
@@ -350,7 +374,7 @@ public class CommandQueue extends IStatusBar.Stub implements
         default void showPinningEnterExitToast(boolean entering) { }
         default void showPinningEscapeToast() { }
         default void handleShowGlobalActionsMenu() { }
-        default void handleShowShutdownUi(boolean isReboot, String reason) { }
+        default void handleShowShutdownUi(boolean isReboot, String reason, boolean advancedReboot) { }
 
         default void showWirelessChargingAnimation(int batteryLevel) {  }
 
@@ -558,11 +582,16 @@ public class CommandQueue extends IStatusBar.Stub implements
          * @see IStatusBar#moveFocusedTaskToDesktop(int)
          */
         default void moveFocusedTaskToDesktop(int displayId) {}
-
-        /**
-         * @see IStatusBar#toggleCameraFlash
-         */
+        
         default void toggleCameraFlash() {}
+
+	default void setBlockedGesturalNavigation(boolean blocked) {}
+
+        default void screenPinningStateChanged(boolean enabled) {}
+
+        default void leftInLandscapeChanged(boolean isLeft) {}
+
+        default void killForegroundApp() {}
     }
 
     @VisibleForTesting
@@ -577,22 +606,12 @@ public class CommandQueue extends IStatusBar.Stub implements
             DumpHandler dumpHandler,
             Lazy<PowerInteractor> powerInteractor
     ) {
+        mContext = context;
         mDisplayTracker = displayTracker;
         mRegistry = registry;
         mDumpHandler = dumpHandler;
-        mDisplayTracker.addDisplayChangeCallback(new DisplayTracker.Callback() {
-            @Override
-            public void onDisplayRemoved(int displayId) {
-                synchronized (mLock) {
-                    mDisplayDisabled.remove(displayId);
-                }
-                // This callback is registered with {@link #mHandler} that already posts to run on
-                // main thread, so it is safe to dispatch directly.
-                for (int i = mCallbacks.size() - 1; i >= 0; i--) {
-                    mCallbacks.get(i).onDisplayRemoved(displayId);
-                }
-            }
-        }, new HandlerExecutor(mHandler));
+        mDisplayTracker.addDisplayChangeCallback(mDisplayTrackerCallback,
+                new HandlerExecutor(mHandler));
         // We always have default display.
         setDisabled(mDisplayTracker.getDefaultDisplayId(), DISABLE_NONE, DISABLE2_NONE);
         mPowerInteractor = powerInteractor;
@@ -733,6 +752,13 @@ public class CommandQueue extends IStatusBar.Stub implements
         }
     }
 
+    public void toggleSettingsPanel() {
+        synchronized (mLock) {
+            mHandler.removeMessages(MSG_TOGGLE_SETTINGS_PANEL);
+            mHandler.obtainMessage(MSG_TOGGLE_SETTINGS_PANEL, 0, 0).sendToTarget();
+        }
+    }
+
     public void animateExpandSettingsPanel(String subPanel) {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_EXPAND_SETTINGS);
@@ -748,8 +774,8 @@ public class CommandQueue extends IStatusBar.Stub implements
     }
 
     @Override
-    public void setImeWindowStatus(int displayId, IBinder token, int vis, int backDisposition,
-            boolean showImeSwitcher) {
+    public void setImeWindowStatus(int displayId, @ImeWindowVisibility int vis,
+            @BackDispositionMode int backDisposition, boolean showImeSwitcher) {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_SHOW_IME_BUTTON);
             SomeArgs args = SomeArgs.obtain();
@@ -757,7 +783,6 @@ public class CommandQueue extends IStatusBar.Stub implements
             args.argi2 = vis;
             args.argi3 = backDisposition;
             args.argi4 = showImeSwitcher ? 1 : 0;
-            args.arg1 = token;
             Message m = mHandler.obtainMessage(MSG_SHOW_IME_BUTTON, args);
             m.sendToTarget();
         }
@@ -1047,10 +1072,10 @@ public class CommandQueue extends IStatusBar.Stub implements
     }
 
     @Override
-    public void showShutdownUi(boolean isReboot, String reason) {
+    public void showShutdownUi(boolean isReboot, String reason, boolean advancedReboot) {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_SHOW_SHUTDOWN_UI);
-            mHandler.obtainMessage(MSG_SHOW_SHUTDOWN_UI, isReboot ? 1 : 0, 0, reason)
+            mHandler.obtainMessage(MSG_SHOW_SHUTDOWN_UI, isReboot ? 1 : 0, advancedReboot ? 1 : 0, reason)
                     .sendToTarget();
         }
     }
@@ -1179,7 +1204,7 @@ public class CommandQueue extends IStatusBar.Stub implements
         }
     }
 
-    @Override
+    // This was previously called from WM, but is now called from WMShell
     public void onRecentsAnimationStateChanged(boolean running) {
         synchronized (mLock) {
             mHandler.obtainMessage(MSG_RECENTS_ANIMATION_STATE_CHANGED, running ? 1 : 0, 0)
@@ -1211,28 +1236,31 @@ public class CommandQueue extends IStatusBar.Stub implements
         }
     }
 
-    private void handleShowImeButton(int displayId, IBinder token, int vis, int backDisposition,
-            boolean showImeSwitcher) {
+    private void handleShowImeButton(int displayId, @ImeWindowVisibility int vis,
+            @BackDispositionMode int backDisposition, boolean showImeSwitcher) {
         if (displayId == INVALID_DISPLAY) return;
 
-        if (mLastUpdatedImeDisplayId != displayId
+        boolean isConcurrentMultiUserModeEnabled = UserManager.isVisibleBackgroundUsersEnabled()
+                && mContext.getResources().getBoolean(android.R.bool.config_perDisplayFocusEnabled)
+                && android.view.inputmethod.Flags.concurrentInputMethods();
+
+        if (!isConcurrentMultiUserModeEnabled
+                && mLastUpdatedImeDisplayId != displayId
                 && mLastUpdatedImeDisplayId != INVALID_DISPLAY) {
             // Set previous NavBar's IME window status as invisible when IME
             // window switched to another display for single-session IME case.
-            sendImeInvisibleStatusForPrevNavBar();
+            sendImeNotVisibleStatusForPrevNavBar();
         }
         for (int i = 0; i < mCallbacks.size(); i++) {
-            mCallbacks.get(i).setImeWindowStatus(displayId, token, vis, backDisposition,
-                    showImeSwitcher);
+            mCallbacks.get(i).setImeWindowStatus(displayId, vis, backDisposition, showImeSwitcher);
         }
         mLastUpdatedImeDisplayId = displayId;
     }
 
-    private void sendImeInvisibleStatusForPrevNavBar() {
+    private void sendImeNotVisibleStatusForPrevNavBar() {
         for (int i = 0; i < mCallbacks.size(); i++) {
-            mCallbacks.get(i).setImeWindowStatus(mLastUpdatedImeDisplayId,
-                    null /* token */, IME_INVISIBLE, BACK_DISPOSITION_DEFAULT,
-                    false /* showImeSwitcher */);
+            mCallbacks.get(i).setImeWindowStatus(mLastUpdatedImeDisplayId, 0 /* vis */,
+                    BACK_DISPOSITION_DEFAULT, false /* showImeSwitcher */);
         }
     }
 
@@ -1488,12 +1516,48 @@ public class CommandQueue extends IStatusBar.Stub implements
         args.arg1 = displayId;
         mHandler.obtainMessage(MSG_ENTER_DESKTOP, args).sendToTarget();
     }
+    
+    @Override
+    public void screenPinningStateChanged(boolean enabled) {
+        synchronized (mLock) {
+            mHandler.removeMessages(MSG_SCREEN_PINNING_STATE_CHANGED);
+            mHandler.obtainMessage(MSG_SCREEN_PINNING_STATE_CHANGED,
+                    enabled ? 1 : 0, 0, null).sendToTarget();
+        }
+    }
+
+    @Override
+    public void leftInLandscapeChanged(boolean isLeft) {
+        synchronized (mLock) {
+            mHandler.removeMessages(MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED);
+            mHandler.obtainMessage(MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED,
+                    isLeft ? 1 : 0, 0, null).sendToTarget();
+        }
+    }
 
     @Override
     public void toggleCameraFlash() {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_TOGGLE_CAMERA_FLASH);
             mHandler.sendEmptyMessage(MSG_TOGGLE_CAMERA_FLASH);
+        }
+    }        
+
+    @Override
+    public void setBlockedGesturalNavigation(boolean blocked) {
+        synchronized (mLock) {
+            if (mHandler.hasMessages(MSG_SET_BLOCKED_GESTURAL_NAVIGATION)) {
+                mHandler.removeMessages(MSG_SET_BLOCKED_GESTURAL_NAVIGATION);
+            }
+            mHandler.obtainMessage(MSG_SET_BLOCKED_GESTURAL_NAVIGATION, blocked).sendToTarget();
+        }
+    }
+
+    @Override
+    public void killForegroundApp() {
+        synchronized (mLock) {
+            mHandler.removeMessages(MSG_KILL_FOREGROUND_APP);
+            mHandler.sendEmptyMessage(MSG_KILL_FOREGROUND_APP);
         }
     }
 
@@ -1544,6 +1608,11 @@ public class CommandQueue extends IStatusBar.Stub implements
                         mCallbacks.get(i).toggleNotificationsPanel();
                     }
                     break;
+                case MSG_TOGGLE_SETTINGS_PANEL:
+                    for (int i = 0; i < mCallbacks.size(); i++) {
+                        mCallbacks.get(i).toggleSettingsPanel();
+                    }
+                    break;
                 case MSG_EXPAND_SETTINGS:
                     for (int i = 0; i < mCallbacks.size(); i++) {
                         mCallbacks.get(i).animateExpandSettingsPanel((String) msg.obj);
@@ -1556,7 +1625,7 @@ public class CommandQueue extends IStatusBar.Stub implements
                     break;
                 case MSG_SHOW_IME_BUTTON:
                     args = (SomeArgs) msg.obj;
-                    handleShowImeButton(args.argi1 /* displayId */, (IBinder) args.arg1 /* token */,
+                    handleShowImeButton(args.argi1 /* displayId */,
                             args.argi2 /* vis */, args.argi3 /* backDisposition */,
                             args.argi4 != 0 /* showImeSwitcher */);
                     break;
@@ -1704,7 +1773,7 @@ public class CommandQueue extends IStatusBar.Stub implements
                     break;
                 case MSG_SHOW_SHUTDOWN_UI:
                     for (int i = 0; i < mCallbacks.size(); i++) {
-                        mCallbacks.get(i).handleShowShutdownUi(msg.arg1 != 0, (String) msg.obj);
+                        mCallbacks.get(i).handleShowShutdownUi(msg.arg1 != 0, (String) msg.obj, msg.arg2 != 0);
                     }
                     break;
                 case MSG_SET_TOP_APP_HIDES_STATUS_BAR:
@@ -2018,9 +2087,27 @@ public class CommandQueue extends IStatusBar.Stub implements
                     }
                     break;
                 }
-                case MSG_TOGGLE_CAMERA_FLASH:
+		case MSG_TOGGLE_CAMERA_FLASH:
                     for (int i = 0; i < mCallbacks.size(); i++) {
                         mCallbacks.get(i).toggleCameraFlash();
+                    }
+                    break;
+		case MSG_SET_BLOCKED_GESTURAL_NAVIGATION:
+                    mCallbacks.forEach(cb -> cb.setBlockedGesturalNavigation((Boolean) msg.obj));
+                    break;
+                case MSG_SCREEN_PINNING_STATE_CHANGED:
+                    for (int i = 0; i < mCallbacks.size(); i++) {
+                        mCallbacks.get(i).screenPinningStateChanged(msg.arg1 != 0);
+                    }
+                    break;
+                case MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED:
+                    for (int i = 0; i < mCallbacks.size(); i++) {
+                        mCallbacks.get(i).leftInLandscapeChanged(msg.arg1 != 0);
+                    }
+                    break;
+                case MSG_KILL_FOREGROUND_APP:
+                    for (int i = 0; i < mCallbacks.size(); i++) {
+                        mCallbacks.get(i).killForegroundApp();
                     }
                     break;
             }

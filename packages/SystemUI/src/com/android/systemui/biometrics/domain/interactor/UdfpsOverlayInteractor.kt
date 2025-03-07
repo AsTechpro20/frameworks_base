@@ -83,7 +83,7 @@ constructor(
 
     /** Sets whether Udfps overlay should handle touches */
     fun setHandleTouches(shouldHandle: Boolean = true) {
-        if (authController.isUltrasonicUdfpsSupported
+        if (authController.isUdfpsSupported
                 && shouldHandle != _shouldHandleTouches.value) {
             fingerprintManager?.setIgnoreDisplayTouches(
                 requestId.value,
@@ -123,7 +123,7 @@ constructor(
     val iconPadding: Flow<Int> =
         udfpsOverlayParams.map { params ->
             val sensorWidth = params.nativeSensorBounds.right - params.nativeSensorBounds.left
-            val nativePadding = (sensorWidth - iconSize) / 2
+            val nativePadding = (sensorWidth - iconSize) / 5
             (nativePadding * params.scaleFactor).toInt()
         }
 

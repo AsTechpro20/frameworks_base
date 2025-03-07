@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.systemui.qs.tiles;
 
 import android.annotation.NonNull;
@@ -58,7 +52,9 @@ import com.android.systemui.qs.QsEventLogger;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.qs.tiles.dialog.InternetDialogManager;
+import com.android.systemui.qs.tiles.dialog.WifiStateWorker;
 import com.android.systemui.res.R;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.statusbar.connectivity.AccessPointController;
 import com.android.systemui.statusbar.connectivity.IconState;
 import com.android.systemui.statusbar.connectivity.MobileDataIndicators;
@@ -66,14 +62,13 @@ import com.android.systemui.statusbar.connectivity.NetworkController;
 import com.android.systemui.statusbar.connectivity.SignalCallback;
 import com.android.systemui.statusbar.connectivity.WifiIcons;
 import com.android.systemui.statusbar.connectivity.WifiIndicators;
-import com.android.systemui.util.CarrierNameCustomization;
 
 import java.io.PrintWriter;
 
 import javax.inject.Inject;
 
 /** Quick settings tile: Internet **/
-public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
+public class InternetTile extends SecureQSTile<QSTile.BooleanState> {
 
     public static final String TILE_SPEC = "internet";
 
@@ -91,8 +86,8 @@ public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
 
     protected final InternetSignalCallback mSignalCallback = new InternetSignalCallback();
     private final InternetDialogManager mInternetDialogManager;
+    private final WifiStateWorker mWifiStateWorker;
     final Handler mHandler;
-    private CarrierNameCustomization mCarrierNameCustomization;
 
     @Inject
     public InternetTile(
@@ -108,23 +103,25 @@ public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
             NetworkController networkController,
             AccessPointController accessPointController,
             InternetDialogManager internetDialogManager,
-            CarrierNameCustomization carrierNameCustomization
+            WifiStateWorker wifiStateWorker,
+            KeyguardStateController keyguardStateController
     ) {
         super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
-                statusBarStateController, activityStarter, qsLogger);
+                statusBarStateController, activityStarter, qsLogger, keyguardStateController);
         mInternetDialogManager = internetDialogManager;
+        mWifiStateWorker = wifiStateWorker;
         mHandler = mainHandler;
         mController = networkController;
         mAccessPointController = accessPointController;
         mDataController = mController.getMobileDataController();
         mController.observe(getLifecycle(), mSignalCallback);
-        mCarrierNameCustomization = carrierNameCustomization;
     }
 
     @Override
     public BooleanState newTileState() {
         BooleanState s = new BooleanState();
         s.forceExpandIcon = true;
+        s.handlesSecondaryClick = true;
         return s;
     }
 
@@ -134,10 +131,20 @@ public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
     }
 
     @Override
-    protected void handleClick(@Nullable Expandable expandable) {
+    protected void handleClick(@Nullable Expandable expandable, boolean keyguardShowing) {
+        if (checkKeyguard(expandable, keyguardShowing)) {
+            return;
+        }
         mHandler.post(() -> mInternetDialogManager.create(true,
                 mAccessPointController.canConfigMobileData(),
                 mAccessPointController.canConfigWifi(), expandable));
+    }
+
+    @Override
+    public void secondaryClick(@Nullable Expandable expandable) {
+        // TODO(b/358352265): Figure out the correct action for the secondary click
+        // Toggle Wifi
+        mWifiStateWorker.setWifiEnabled(!mWifiStateWorker.isWifiEnabled());
     }
 
     @Override
@@ -313,6 +320,9 @@ public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
             if (DEBUG) {
                 Log.d(TAG, "setWifiIndicators: " + indicators);
             }
+            if (!indicators.isDefault) {
+                return;
+            }
             synchronized (mWifiInfo) {
                 mWifiInfo.mEnabled = indicators.enabled;
                 mWifiInfo.mSsid = indicators.description;
@@ -328,7 +338,7 @@ public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
                     mWifiInfo.mWifiSignalContentDescription = null;
                 }
             }
-            if (indicators.qsIcon != null || !indicators.isDefault) {
+            if (indicators.qsIcon != null) {
                 refreshState(mWifiInfo);
             }
         }
@@ -343,14 +353,8 @@ public class InternetTile extends QSTileImpl<QSTile.BooleanState> {
                 return;
             }
             synchronized (mCellularInfo) {
-                if (mCarrierNameCustomization.isRoamingCustomizationEnabled()
-                        && mCarrierNameCustomization.isRoaming(indicators.subId)) {
-                    mCellularInfo.mDataSubscriptionName =
-                            mCarrierNameCustomization.getRoamingCarrierName(indicators.subId);
-                } else {
-                    mCellularInfo.mDataSubscriptionName = indicators.qsDescription == null
-                            ? mController.getMobileDataNetworkName() : indicators.qsDescription;
-                }
+                mCellularInfo.mDataSubscriptionName = indicators.qsDescription == null
+                    ? mController.getMobileDataNetworkName() : indicators.qsDescription;
                 mCellularInfo.mDataContentDescription = indicators.qsDescription != null
                     ? indicators.typeContentDescriptionHtml : null;
                 mCellularInfo.mMobileSignalIconId = indicators.qsIcon.icon;

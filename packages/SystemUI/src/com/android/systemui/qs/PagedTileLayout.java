@@ -13,8 +13,12 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.AttributeSet;
+import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityEvent;
@@ -30,12 +34,16 @@ import androidx.viewpager.widget.ViewPager;
 
 import com.android.internal.jank.InteractionJankMonitor;
 import com.android.internal.logging.UiEventLogger;
+import com.android.systemui.Dependency;
 import com.android.systemui.plugins.qs.QSTile;
 import com.android.systemui.qs.PageIndicator.PageScrollActionListener.Direction;
 import com.android.systemui.qs.QSPanel.QSTileLayout;
 import com.android.systemui.qs.QSPanelControllerBase.TileRecord;
+import com.android.systemui.qs.TileUtils;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.res.R;
+import com.android.systemui.nad.transformer.*;
+import com.android.systemui.tuner.TunerService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +68,10 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
     private final ArrayList<TileLayout> mPages = new ArrayList<>();
 
     private QSLogger mLogger;
+    private int mTransformer;
+    private static final String CUSTOM_TRANSITIONS =
+        "system:" + Settings.System.CUSTOM_TRANSITIONS_KEY;
+
     @Nullable
     private PageIndicator mPageIndicator;
     private float mPageIndicatorPosition;
@@ -100,11 +112,17 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
         setCurrentItem(0, false);
         mLayoutOrientation = getResources().getConfiguration().orientation;
         mLayoutDirection = getLayoutDirection();
+        TunerService tunerService = Dependency.get(TunerService.class);
+        tunerService.addTunable((key, newValue) -> {
+            if (key.equals(CUSTOM_TRANSITIONS)) {
+            	int transform = mTransformer = TunerService.parseInteger(newValue, 0);
+            	setCustomTransitions(transform);
+            }
+        },  CUSTOM_TRANSITIONS);
     }
     private int mLastMaxHeight = -1;
 
-    @Override
-    public void setPageMargin(int marginPixels) {
+    public void setPageMargin(int marginPixelsStart, int marginPixelsEnd) {
         // Using page margins creates some rounding issues that interfere with the correct position
         // in the onPageChangedListener and therefore present bad positions to the PageIndicator.
         // Instead, we use negative margins in the container and positive padding in the pages,
@@ -113,14 +131,19 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
         // QSContainerImpl resources are set onAttachedView, so this view will always have the right
         // values when attached.
         MarginLayoutParams lp = (MarginLayoutParams) getLayoutParams();
-        lp.setMarginStart(-marginPixels);
-        lp.setMarginEnd(-marginPixels);
+        lp.setMarginStart(-marginPixelsStart);
+        lp.setMarginEnd(-marginPixelsEnd);
         setLayoutParams(lp);
 
         int nPages = mPages.size();
         for (int i = 0; i < nPages; i++) {
             View v = mPages.get(i);
-            v.setPadding(marginPixels, v.getPaddingTop(), marginPixels, v.getPaddingBottom());
+            v.setPadding(
+                    marginPixelsStart,
+                    v.getPaddingTop(),
+                    marginPixelsEnd,
+                    v.getPaddingBottom()
+            );
         }
     }
 
@@ -137,12 +160,16 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
 
     @Override
     public int getTilesHeight() {
-        // Use the first page as that is the maximum height we need to show.
-        TileLayout tileLayout = mPages.get(0);
-        if (tileLayout == null) {
-            return 0;
+        // Find the maximum height among all pages.
+        int height = 0;
+        for (int i = 0; i < mPages.size(); i++) {
+            TileLayout tileLayout = mPages.get(i);
+            if (tileLayout != null) {
+                height = Math.max(height, tileLayout.getTilesHeight());
+            }
         }
-        return tileLayout.getTilesHeight();
+        mLogger.d("getTilesHeight ret=", height);
+        return height;
     }
 
     @Override
@@ -170,6 +197,7 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
                     "Orientation didn't change, tiles might be not redistributed, new config",
                     newConfig);
         }
+        setCustomTransitions(mTransformer);
     }
 
     @Override
@@ -187,11 +215,91 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
     }
 
     @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        if ((event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0
+                && event.getAction() == MotionEvent.ACTION_SCROLL) {
+            // Handle mouse (or ext. device) by swiping the page depending on the scroll
+            final float vscroll;
+            final float hscroll;
+            if ((event.getMetaState() & KeyEvent.META_SHIFT_ON) != 0) {
+                vscroll = 0;
+                hscroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            } else {
+                vscroll = -event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+                hscroll = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
+            }
+            if (hscroll != 0 || vscroll != 0) {
+                boolean isForwardScroll =
+                        isLayoutRtl() ? (hscroll < 0 || vscroll < 0) : (hscroll > 0 || vscroll > 0);
+                int swipeDirection = isForwardScroll ? RIGHT : LEFT;
+                if (mScroller.isFinished()) {
+                    scrollByX(getDeltaXForPageScrolling(swipeDirection),
+                            SINGLE_PAGE_SCROLL_DURATION_MILLIS);
+                }
+                return true;
+            }
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
+    @Override
     public void setCurrentItem(int item, boolean smoothScroll) {
         if (isLayoutRtl()) {
             item = mPages.size() - 1 - item;
         }
         super.setCurrentItem(item, smoothScroll);
+    }
+	
+    private void setCustomTransitions(int transformer) {
+    	ABaseTransformer transition = null;
+    	switch(transformer) {
+        	case 0:
+        	    transition = new DefaultTransformer();
+        	    break;
+        	case 1:
+        	    transition = new CubeInTransformer();
+        	    break;
+        	case 2:
+        	    transition = new CubeOutTransformer();
+        	    break;
+        	case 3:
+        	    transition = new AccordionTransformer();
+        	    break;
+        	case 4:
+        	    transition = new BackgroundToForegroundTransformer();
+        	    break;
+        	case 5:
+        	    transition = new DepthPageTransformer();
+        	    break;
+        	case 6:
+        	    transition = new FadeTransformer();
+        	    break;
+        	case 7:
+        	    transition = new ForegroundToBackgroundTransformer();
+        	    break;
+        	case 8:
+        	    transition = new RotateDownTransformer();
+        	    break;
+        	case 9:
+        	    transition = new RotateUpTransformer();
+        	    break;
+        	case 10:
+        	    transition = new StackTransformer();
+        	    break;
+        	case 11:
+        	    transition = new TabletTransformer();
+        	    break;
+        	case 12:
+        	    transition = new ZoomInTransformer();
+        	    break;
+        	case 13:
+        	    transition = new ZoomOutTransformer();
+        	    break;
+        	case 14:
+        	    transition = new ZoomOutSlideTransformer();
+        	    break;
+        }
+    	setPageTransformer(true, transition);
     }
 
     /**
@@ -297,6 +405,7 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
         super.onFinishInflate();
         mPages.add(createTileLayout());
         mAdapter.notifyDataSetChanged();
+        setCustomTransitions(mTransformer);
     }
 
     private TileLayout createTileLayout() {
@@ -473,7 +582,7 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
 
     @Override
     public boolean setMinRows(int minRows) {
-        mMinRows = minRows;
+        mMinRows = Math.min(minRows, TileUtils.getQSRowsCount(getContext()));
         boolean changed = false;
         for (int i = 0; i < mPages.size(); i++) {
             if (mPages.get(i).setMinRows(minRows)) {
@@ -491,10 +600,10 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
 
     @Override
     public boolean setMaxColumns(int maxColumns) {
-        mMaxColumns = maxColumns;
+        mMaxColumns = Math.max(maxColumns, TileUtils.getQSColumnsCount(getContext()));
         boolean changed = false;
         for (int i = 0; i < mPages.size(); i++) {
-            if (mPages.get(i).setMaxColumns(maxColumns)) {
+            if (mPages.get(i).setMaxColumns(mMaxColumns)) {
                 changed = true;
                 forceTilesRedistribution("maxColumns in pages changed");
             }
@@ -604,6 +713,30 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
     public int getNumTilesFirstPage() {
         if (mPages.size() == 0) return 0;
         return mPages.get(0).mRecords.size();
+    }
+
+    @Override
+    public int getResourceColumns() {
+        if (mPages.size() == 0)
+            return TileUtils.getQSColumnsCount(getContext());
+        TileLayout currentPage = mPages.get(getCurrentPageNumber());
+        return currentPage.getResourceColumns();
+    }
+
+    @Override
+    public int getResourceRows() {
+        if (mPages.size() == 0)
+            return TileUtils.getQSRowsCount(getContext());
+        TileLayout currentPage = mPages.get(getCurrentPageNumber());
+        return currentPage.getResourceRows();
+    }
+
+    @Override
+    public void updateSettings() {
+        for (int i = 0; i < mPages.size(); i++) {
+            mPages.get(i).updateSettings();
+        }
+        mDistributeTiles = true;
     }
 
     public void startTileReveal(Set<String> tilesToReveal, final Runnable postAnimation) {

@@ -16,7 +16,6 @@
 package com.android.keyguard;
 
 import android.hardware.biometrics.BiometricSourceType;
-import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.view.WindowManagerPolicyConstants;
 
@@ -133,13 +132,6 @@ public class KeyguardUpdateMonitorCallback {
      * @param simState
      */
     public void onSimStateChanged(int subId, int slotId, int simState) { }
-
-    /**
-     * Called when the sevice state changes.
-     * @param subId
-     * @param serviceState
-     */
-    public void onServiceStateChanged(int subId, ServiceState state) { }
 
     /**
      * Called when a user got unlocked.

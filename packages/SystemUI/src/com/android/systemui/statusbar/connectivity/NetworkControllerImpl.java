@@ -37,7 +37,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerExecutor;
 import android.os.Looper;
-import android.os.SystemProperties;
 import android.provider.Settings;
 import android.telephony.CarrierConfigManager;
 import android.telephony.CellSignalStrength;
@@ -56,7 +55,6 @@ import androidx.annotation.NonNull;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.telephony.TelephonyIntents;
 import com.android.settingslib.Utils;
 import com.android.settingslib.mobile.MobileMappings.Config;
 import com.android.settingslib.mobile.MobileStatusTracker.SubscriptionDefaults;
@@ -82,7 +80,6 @@ import com.android.systemui.statusbar.policy.DataSaverController;
 import com.android.systemui.statusbar.policy.DataSaverControllerImpl;
 import com.android.systemui.statusbar.policy.DeviceProvisionedController;
 import com.android.systemui.statusbar.policy.DeviceProvisionedController.DeviceProvisionedListener;
-import com.android.systemui.statusbar.policy.FiveGServiceClient;
 import com.android.systemui.telephony.TelephonyListenerManager;
 import com.android.systemui.util.CarrierConfigTracker;
 
@@ -137,6 +134,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
     private final Object mLock = new Object();
     private Config mConfig;
     private final CarrierConfigTracker mCarrierConfigTracker;
+    private final DumpManager mDumpManager;
     private final LogBuffer mLogBuffer;
     private final MobileSignalControllerFactory mMobileFactory;
 
@@ -206,9 +204,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
     private InternetDialogManager mInternetDialogManager;
     private Handler mMainHandler;
 
-    @VisibleForTesting
-    FiveGServiceClient mFiveGServiceClient;
-
     private ConfigurationController.ConfigurationListener mConfigurationListener =
             new ConfigurationController.ConfigurationListener() {
                 @Override
@@ -251,6 +246,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
             MobileSignalControllerFactory mobileFactory,
             @Main Handler handler,
             InternetDialogManager internetDialogManager,
+            DumpManager dumpManager,
             @StatusBarNetworkControllerLog LogBuffer logBuffer) {
         this(context, connectivityManager,
                 telephonyManager,
@@ -273,6 +269,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
                 trackerFactory,
                 mobileFactory,
                 handler,
+                dumpManager,
                 logBuffer);
         mReceiverHandler.post(mRegisterListeners);
         mInternetDialogManager = internetDialogManager;
@@ -300,6 +297,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
             WifiStatusTrackerFactory trackerFactory,
             MobileSignalControllerFactory mobileFactory,
             @Main Handler handler,
+            DumpManager dumpManager,
             LogBuffer logBuffer
     ) {
         mContext = context;
@@ -321,6 +319,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
         mHasMobileDataFeature = telephonyManager.isDataCapable();
         mDemoModeController = demoModeController;
         mCarrierConfigTracker = carrierConfigTracker;
+        mDumpManager = dumpManager;
         mLogBuffer = logBuffer;
 
         // telephony
@@ -384,8 +383,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
         if (mWifiManager != null) {
             mWifiManager.registerScanResultsCallback(mReceiverHandler::post, scanResultsCallback);
         }
-
-        mFiveGServiceClient = FiveGServiceClient.getInstance(context);
 
         NetworkCallback callback =
                 new NetworkCallback(NetworkCallback.FLAG_INCLUDE_LOCATION_INFO){
@@ -472,6 +469,8 @@ public class NetworkControllerImpl extends BroadcastReceiver
         // demo mode commands, due to the fact that the mobile command handler has an infinite
         // loop bug if you use any slot other than 1.
         // mDemoModeController.addCallback(this);
+
+        mDumpManager.registerNormalDumpable(TAG, this);
     }
 
     private final Runnable mClearForceValidated = () -> {
@@ -501,7 +500,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
         for (int i = 0; i < mMobileSignalControllers.size(); i++) {
             MobileSignalController mobileSignalController = mMobileSignalControllers.valueAt(i);
             mobileSignalController.registerListener();
-            mobileSignalController.registerFiveGStateListener(mFiveGServiceClient);
         }
         if (mSubscriptionListener == null) {
             mSubscriptionListener = new SubListener(mBgLooper);
@@ -511,7 +509,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
 
         // broadcasts
         IntentFilter filter = new IntentFilter();
-        filter.addAction(TelephonyIntents.ACTION_ANY_DATA_CONNECTION_STATE_CHANGED);
         filter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
         filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
@@ -556,15 +553,9 @@ public class NetworkControllerImpl extends BroadcastReceiver
         for (int i = 0; i < mMobileSignalControllers.size(); i++) {
             MobileSignalController mobileSignalController = mMobileSignalControllers.valueAt(i);
             mobileSignalController.unregisterListener();
-            mobileSignalController.unregisterFiveGStateListener(mFiveGServiceClient);
         }
         mSubscriptionManager.removeOnSubscriptionsChangedListener(mSubscriptionListener);
         mBroadcastDispatcher.unregisterReceiver(this);
-    }
-
-    @VisibleForTesting
-    public FiveGServiceClient getFiveGServiceClient() {
-        return mFiveGServiceClient;
     }
 
     @Override
@@ -1001,7 +992,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
                 }
                 if (mListening) {
                     controller.registerListener();
-                    controller.registerFiveGStateListener(mFiveGServiceClient);
                 }
             }
         }
@@ -1012,7 +1002,6 @@ public class NetworkControllerImpl extends BroadcastReceiver
                     mDefaultSignalController = null;
                 }
                 cachedControllers.get(key).unregisterListener();
-                cachedControllers.get(key).unregisterFiveGStateListener(mFiveGServiceClient);
             }
         }
         mCallbackHandler.setSubs(subscriptions);

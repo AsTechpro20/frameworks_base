@@ -14,13 +14,6 @@
  * limitations under the License.
  */
 
-/*
-  Changes from Qualcomm Innovation Center are provided under the following license:
-
-  Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
-  SPDX-License-Identifier: BSD-3-Clause-Clear
-*/
-
 package com.android.systemui.statusbar.pipeline.mobile.data
 
 import android.content.Intent
@@ -173,31 +166,6 @@ constructor(
         )
     }
 
-    fun logOnNrIconTypeChanged(nrIconType: Int, is6Rx : Boolean, subId: Int) {
-        buffer.log(
-            TAG,
-            LogLevel.INFO,
-            {
-                int1 = subId
-                str1 = nrIconType.toString()
-                bool1 = is6Rx
-            },
-            { "onNrIconTypeChanged: subId=$int1 nrIconType=$str1 is6Rx=$bool1" },
-        )
-    }
-
-    fun logOnCiwlanAvailableChanged(available: Boolean, subId: Int) {
-        buffer.log(
-            TAG,
-            LogLevel.INFO,
-            {
-                int1 = subId
-                bool1 = available
-            },
-            { "logOnCiwlanAvailableChanged: subId=$int1 CiwlanAvailable=$bool1" },
-        )
-    }
-
     fun logActionCarrierConfigChanged() {
         buffer.log(TAG, LogLevel.INFO, {}, { "Intent received: ACTION_CARRIER_CONFIG_CHANGED" })
     }
@@ -230,7 +198,8 @@ constructor(
 
     fun logServiceProvidersUpdatedBroadcast(intent: Intent) {
         val showSpn = intent.getBooleanExtra(TelephonyManager.EXTRA_SHOW_SPN, false)
-        val spn = intent.getStringExtra(TelephonyManager.EXTRA_DATA_SPN)
+        val spn = intent.getStringExtra(TelephonyManager.EXTRA_SPN)
+        val dataSpn = intent.getStringExtra(TelephonyManager.EXTRA_DATA_SPN)
         val showPlmn = intent.getBooleanExtra(TelephonyManager.EXTRA_SHOW_PLMN, false)
         val plmn = intent.getStringExtra(TelephonyManager.EXTRA_PLMN)
 
@@ -240,12 +209,13 @@ constructor(
             {
                 bool1 = showSpn
                 str1 = spn
+                str2 = dataSpn
                 bool2 = showPlmn
-                str2 = plmn
+                str3 = plmn
             },
             {
                 "Intent: ACTION_SERVICE_PROVIDERS_UPDATED." +
-                    " showSpn=$bool1 spn=$str1 showPlmn=$bool2 plmn=$str2"
+                    " showSpn=$bool1 spn=$str1 dataSpn=$str2 showPlmn=$bool2 plmn=$str3"
             }
         )
     }
@@ -270,34 +240,6 @@ constructor(
             { int1 = netId },
             { "Lost prioritized network (nedId=$int1)" },
         )
-    }
-
-    fun logImsStateCallbackRegistered(registered: Boolean, subId: Int) {
-        buffer.log(
-            TAG,
-            LogLevel.INFO,
-            {
-                bool1 = registered
-                int1 = subId
-            },
-            { "ImsStateCallback registered =$bool1 subId=$int1" },
-        )
-    }
-
-    fun logSlotIndex(slotIndex: Int, subId: Int) {
-        buffer.log(
-            TAG,
-            LogLevel.INFO,
-            {
-                int1 = slotIndex
-                int2 = subId
-            },
-            { "SlotIndex changed =$int1 subId=$int2" },
-        )
-    }
-
-    fun logException(ex: Exception, logMsg: String) {
-        buffer.log(TAG, LogLevel.ERROR, {}, { logMsg }, exception = ex)
     }
 }
 

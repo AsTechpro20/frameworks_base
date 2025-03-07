@@ -37,7 +37,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.android.app.animation.Interpolators
 import com.android.app.tracing.coroutines.launch
-import com.android.keyguard.EmergencyCarrierArea
 import com.android.settingslib.Utils
 import com.android.systemui.animation.ActivityTransitionAnimator
 import com.android.systemui.animation.Expandable
@@ -120,8 +119,6 @@ object KeyguardBottomAreaViewBinder {
         val overlayContainer: View = view.requireViewById(R.id.overlay_container)
         val settingsMenu: LaunchableLinearLayout =
             view.requireViewById(R.id.keyguard_settings_button)
-        val emergencyCarrierArea: EmergencyCarrierArea =
-            view.requireViewById(R.id.keyguard_selector_fade_container)
 
         startButton.setOnApplyWindowInsetsListener { inView, windowInsets ->
             val bottomInset = windowInsets.displayCutout?.safeInsetBottom ?: 0
@@ -208,16 +205,6 @@ object KeyguardBottomAreaViewBinder {
                                 } else {
                                     View.INVISIBLE
                                 }
-                            val showEmergencyButton: Boolean =
-                                view.context.resources.getBoolean(com.android.settingslib.R.bool.config_showEmergencyButton)
-                            emergencyCarrierArea.visibility =
-                                if (!showEmergencyButton) {
-                                    View.GONE
-                                } else if (isVisible) {
-                                    View.VISIBLE
-                                } else {
-                                    View.INVISIBLE
-                                }
                         }
                     }
 
@@ -232,7 +219,6 @@ object KeyguardBottomAreaViewBinder {
                                     }
                                 this.alpha = alpha
                             }
-                            emergencyCarrierArea.alpha = alpha
                         }
                     }
 
@@ -290,7 +276,12 @@ object KeyguardBottomAreaViewBinder {
                             isVisible ->
                             settingsMenu.animateVisibility(visible = isVisible)
                             if (isVisible) {
-                                vibratorHelper?.vibrate(KeyguardBottomAreaVibrations.Activated)
+                                vibratorHelper?.vibrate(
+                                    if (KeyguardBottomAreaVibrations.areAllPrimitivesSupported) {
+                                        KeyguardBottomAreaVibrations.Activated
+                                    } else {
+                                        KeyguardBottomAreaVibrations.ActivatedAlt
+                                    })
                                 settingsMenu.setOnTouchListener(
                                     KeyguardSettingsButtonOnTouchListener(
                                         viewModel = viewModel.settingsMenuViewModel,
@@ -458,11 +449,11 @@ object KeyguardBottomAreaViewBinder {
                     shakeAnimator.start()
 
                     vibratorHelper?.vibrate(
-                          if (KeyguardBottomAreaVibrations.areAllPrimitivesSupported) {
-                              KeyguardBottomAreaVibrations.Shake
-                          } else {
-                              KeyguardBottomAreaVibrations.ShakeAlt
-                          })
+                        if (KeyguardBottomAreaVibrations.areAllPrimitivesSupported) {
+                            KeyguardBottomAreaVibrations.Shake
+                        } else {
+                            KeyguardBottomAreaVibrations.ShakeAlt
+                        })
                 }
                 view.onLongClickListener =
                     OnLongClickListener(falsingManager, viewModel, vibratorHelper, onTouchListener)

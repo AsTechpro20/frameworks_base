@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.keyguard;
 
 
@@ -56,9 +50,9 @@ import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import android.testing.AndroidTestingRunner;
 import android.text.TextUtils;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
 
 import com.android.keyguard.logging.CarrierTextManagerLogger;
@@ -71,7 +65,6 @@ import com.android.systemui.statusbar.pipeline.satellite.ui.viewmodel.FakeDevice
 import com.android.systemui.statusbar.pipeline.wifi.data.repository.FakeWifiRepository;
 import com.android.systemui.statusbar.pipeline.wifi.shared.model.WifiNetworkModel;
 import com.android.systemui.telephony.TelephonyListenerManager;
-import com.android.systemui.util.CarrierNameCustomization;
 import com.android.systemui.util.concurrency.FakeExecutor;
 import com.android.systemui.util.kotlin.JavaAdapter;
 import com.android.systemui.util.time.FakeSystemClock;
@@ -91,7 +84,7 @@ import java.util.HashMap;
 import java.util.List;
 
 @SmallTest
-@RunWith(AndroidTestingRunner.class)
+@RunWith(AndroidJUnit4.class)
 public class CarrierTextManagerTest extends SysuiTestCase {
 
     private static final CharSequence SEPARATOR = " \u2014 ";
@@ -132,8 +125,6 @@ public class CarrierTextManagerTest extends SysuiTestCase {
     private SubscriptionManager mSubscriptionManager;
     private CarrierTextManager.CarrierTextCallbackInfo mCarrierTextCallbackInfo;
 
-    @Mock
-    private CarrierNameCustomization mCarrierNameCustomization;
     private CarrierTextManager mCarrierTextManager;
 
     private CarrierTextManagerLogger mLogger =
@@ -190,8 +181,7 @@ public class CarrierTextManagerTest extends SysuiTestCase {
                 mMainExecutor,
                 mBgExecutor,
                 mKeyguardUpdateMonitor,
-                mLogger,
-                mCarrierNameCustomization)
+                mLogger)
                 .setShowAirplaneMode(true)
                 .setShowMissingSim(true)
                 .build();
@@ -252,8 +242,7 @@ public class CarrierTextManagerTest extends SysuiTestCase {
                 mMainExecutor,
                 mBgExecutor,
                 mKeyguardUpdateMonitor,
-                mLogger,
-                mCarrierNameCustomization
+                mLogger
         )
                 .setShowAirplaneMode(true)
                 .setShowMissingSim(true)
@@ -456,16 +445,11 @@ public class CarrierTextManagerTest extends SysuiTestCase {
 
         assertFalse(mWifiRepository.isWifiConnectedWithValidSsid());
         mWifiRepository.setWifiNetwork(
-                new WifiNetworkModel.Active(
-                        /* networkId= */ 0,
+                WifiNetworkModel.Active.Companion.of(
                         /* isValidated= */ false,
                         /* level= */ 0,
                         /* ssid= */ "",
-                        /* hotspotDeviceType= */ WifiNetworkModel.HotspotDeviceType.NONE,
-                        /* isPasspointAccessPoint= */ false,
-                        /* isOnlineSignUpForPasspointAccessPoint= */ false,
-                        /* passpointProviderFriendlyName= */ null,
-                        /* wifiStandard= */ 0));
+                        /* hotspotDeviceType= */ WifiNetworkModel.HotspotDeviceType.NONE));
         assertTrue(mWifiRepository.isWifiConnectedWithValidSsid());
 
         mKeyguardUpdateMonitor.mServiceStates = new HashMap<>();

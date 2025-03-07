@@ -14,13 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
-
 package com.android.systemui.statusbar.pipeline.mobile.data.repository.prod
 
 import android.annotation.SuppressLint
@@ -28,33 +21,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.database.ContentObserver
 import android.net.ConnectivityManager
 import android.net.ConnectivityManager.NetworkCallback
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.TelephonyNetworkSpecifier
-import android.provider.Settings.Global
-import android.telephony.CellSignalStrength.SIGNAL_STRENGTH_GREAT
-import android.telephony.CellSignalStrength.SIGNAL_STRENGTH_GOOD
-import android.telephony.CellSignalStrength.SIGNAL_STRENGTH_MODERATE
-import android.telephony.CellSignalStrength.SIGNAL_STRENGTH_POOR
 import android.telephony.CellSignalStrength.SIGNAL_STRENGTH_NONE_OR_UNKNOWN
 import android.telephony.CellSignalStrengthCdma
-import android.telephony.CellSignalStrengthLte
-import android.telephony.ims.ImsException
-import android.telephony.ims.ImsMmTelManager
-import android.telephony.ims.ImsReasonInfo
-import android.telephony.ims.ImsRegistrationAttributes
-import android.telephony.ims.ImsStateCallback
-import android.telephony.ims.feature.MmTelFeature.MmTelCapabilities
-import android.telephony.ims.RegistrationManager
-import android.telephony.ims.stub.ImsRegistrationImplBase.REGISTRATION_TECH_NONE
 import android.telephony.ServiceState
 import android.telephony.SignalStrength
-import android.telephony.SubscriptionInfo
-import android.telephony.SubscriptionManager
 import android.telephony.SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX
 import android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID
 import android.telephony.TelephonyCallback
@@ -66,7 +41,6 @@ import android.telephony.TelephonyManager.ERI_ON
 import android.telephony.TelephonyManager.EXTRA_SUBSCRIPTION_ID
 import android.telephony.TelephonyManager.NETWORK_TYPE_UNKNOWN
 import android.telephony.TelephonyManager.UNKNOWN_CARRIER_ID
-import android.util.Log
 import com.android.settingslib.Utils
 import com.android.systemui.broadcast.BroadcastDispatcher
 import com.android.systemui.common.coroutine.ConflatedCallbackFlow.conflatedCallbackFlow
@@ -75,7 +49,6 @@ import com.android.systemui.dagger.qualifiers.Background
 import com.android.systemui.flags.FeatureFlagsClassic
 import com.android.systemui.flags.Flags.ROAMING_INDICATOR_VIA_DISPLAY_INFO
 import com.android.systemui.log.table.TableLogBuffer
-import com.android.systemui.log.table.logDiffsForTable
 import com.android.systemui.statusbar.pipeline.ims.data.model.ImsStateModel
 import com.android.systemui.statusbar.pipeline.ims.data.repository.ImsRepository
 import com.android.systemui.statusbar.pipeline.mobile.data.MobileInputLogger
@@ -94,10 +67,6 @@ import com.android.systemui.statusbar.pipeline.mobile.data.repository.MobileConn
 import com.android.systemui.statusbar.pipeline.mobile.util.MobileMappingsProxy
 import com.android.systemui.statusbar.pipeline.shared.data.model.DataActivityModel
 import com.android.systemui.statusbar.pipeline.shared.data.model.toMobileDataActivityModel
-import com.android.systemui.statusbar.policy.FiveGServiceClient
-import com.android.systemui.statusbar.policy.FiveGServiceClient.FiveGServiceState
-import com.android.systemui.statusbar.policy.FiveGServiceClient.IFiveGStateListener
-import com.qti.extphone.NrIconType
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -110,7 +79,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -120,9 +89,6 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 
 /**
  * A repository implementation for a typical mobile connection (as opposed to a carrier merged
@@ -142,13 +108,11 @@ class MobileConnectionRepositoryImpl(
     broadcastDispatcher: BroadcastDispatcher,
     private val mobileMappingsProxy: MobileMappingsProxy,
     private val bgDispatcher: CoroutineDispatcher,
-    private val logger: MobileInputLogger,
+    logger: MobileInputLogger,
     override val tableLogBuffer: TableLogBuffer,
     flags: FeatureFlagsClassic,
-    private val scope: CoroutineScope,
-    private val fiveGServiceClient: FiveGServiceClient,
-    slotIndexForSubId:  Flow<Int>? = null,
-    private val imsRepository: ImsRepository,
+    scope: CoroutineScope,
+    imsRepo: ImsRepository,
 ) : MobileConnectionRepository {
     init {
         if (telephonyManager.subscriptionId != subId) {
@@ -157,23 +121,8 @@ class MobileConnectionRepositoryImpl(
                     "Found ${telephonyManager.subscriptionId} instead."
             )
         }
-        slotIndexForSubId?.let { slotIndex ->
-            scope.launch { slotIndex.collect {
-                logger.logSlotIndex(it, subId)
-                if (SubscriptionManager.isValidSlotIndex(it)) {
-                    registerImsCallbackIfNeeded()
-                } else {
-                    unRegisterImsCallbackIfNeeded()
-                }
-            }}
-        }
     }
-    private val tag: String = MobileConnectionRepositoryImpl::class.java.simpleName
-    private val imsMmTelManager: ImsMmTelManager = ImsMmTelManager.createForSubscriptionId(subId)
-    private var imsStateCallback: ImsStateCallback? = null
-    private var registrationCallback: RegistrationManager.RegistrationCallback? = null
-    private var capabilityCallback: ImsMmTelManager.CapabilityCallback? = null
-    private var imsStateCallBackRegistered = false
+
     /**
      * This flow defines the single shared connection to system_server via TelephonyCallback. Any
      * new callback should be added to this listener and funneled through callbackEvents via a data
@@ -251,107 +200,12 @@ class MobileConnectionRepositoryImpl(
                             trySend(CallbackEvent.OnSignalStrengthChanged(signalStrength))
                         }
                     }
-
                 telephonyManager.registerTelephonyCallback(bgDispatcher.asExecutor(), callback)
-                awaitClose {
-                    telephonyManager.unregisterTelephonyCallback(callback)
-                }
+                awaitClose { telephonyManager.unregisterTelephonyCallback(callback) }
             }
             .flowOn(bgDispatcher)
             .scan(initial = initial) { state, event -> state.applyEvent(event) }
             .stateIn(scope = scope, started = SharingStarted.WhileSubscribed(), initial)
-    }
-
-    private fun getFiveGStateFlow(slotIndex: Int): Flow<TelephonyCallbackState> {
-        return callbackFlow {
-            val listener =
-                object : IFiveGStateListener {
-                    override fun onStateChanged(serviceState: FiveGServiceState) {
-                        logger.logOnNrIconTypeChanged(serviceState.nrIconType,
-                            serviceState.is6Rx, subId)
-                        trySend(CallbackEvent.OnNrIconTypeChanged(serviceState.nrIconType,
-                            serviceState.is6Rx))
-                    }
-
-                    override fun onCiwlanAvailableChanged(available: Boolean) {
-                        logger.logOnCiwlanAvailableChanged(available, subId)
-                        trySend(CallbackEvent.OnCiwlanAvailableChanged(available))
-                    }
-                }
-            fiveGServiceClient.registerListener(slotIndex, listener)
-            awaitClose {
-                fiveGServiceClient.unregisterListener(slotIndex, listener) }
-        }
-            .scan(TelephonyCallbackState()) { state, event -> state.applyEvent(event) }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), TelephonyCallbackState())
-    }
-
-    private val fiveGState: Flow<TelephonyCallbackState> = run {
-        val initial = flowOf(TelephonyCallbackState()
-            .applyEvent(CallbackEvent.OnNrIconTypeChanged(NrIconType.TYPE_NONE, false))
-            .applyEvent(CallbackEvent.OnCiwlanAvailableChanged(false)))
-        if (slotIndexForSubId == null) {
-            initial
-        } else {
-            slotIndexForSubId
-                .flatMapLatest { it ->
-                    if (SubscriptionManager.isValidSlotIndex(it)) {
-                        getFiveGStateFlow(it)
-                    } else {
-                        initial
-                    }
-                }
-        }
-    }
-
-    private fun unRegisterImsCallbackIfNeeded() {
-        if (!imsStateCallBackRegistered) {
-            return
-        }
-        try {
-            imsStateCallback?.let {
-                imsMmTelManager.unregisterImsStateCallback(it)
-            }
-        } catch (exception: Exception) {
-            logger.logException(exception, "UnregisterImsStateCallback failed sub: $subId")
-        }
-        unregisterCapabilityAndRegistrationCallback()
-        imsStateCallBackRegistered = false
-        logger.logImsStateCallbackRegistered(false, subId)
-    }
-
-    private fun registerImsCallbackIfNeeded() {
-        if (imsStateCallBackRegistered) {
-            return
-        }
-        if (imsStateCallback == null) {
-            imsStateCallback =
-                object : ImsStateCallback() {
-                    override fun onAvailable() {
-                        registerCapabilityAndRegistrationCallback()
-                    }
-
-                    override fun onUnavailable(reason: Int) {
-                        unregisterCapabilityAndRegistrationCallback()
-                        if (reason == 5) {
-                            unRegisterImsCallbackIfNeeded()
-                        }
-                    }
-
-                    override fun onError() {
-                        unregisterCapabilityAndRegistrationCallback()
-                    }
-                }
-        }
-        try {
-            imsStateCallback?.let {
-                imsMmTelManager.registerImsStateCallback(context.mainExecutor,it) }
-            imsStateCallBackRegistered = true
-            logger.logImsStateCallbackRegistered(true, subId)
-        } catch (exception: ImsException) {
-            logger.logException(exception, "RegisterImsStateCallback failed sub: $subId")
-            imsStateCallBackRegistered = false
-        }
     }
 
     override val isEmergencyOnly =
@@ -447,13 +301,11 @@ class MobileConnectionRepositoryImpl(
                     OverrideNetworkType(
                         mobileMappingsProxy.toIconKeyOverride(
                             it.telephonyDisplayInfo.overrideNetworkType
-                        ),
-                        it.telephonyDisplayInfo.overrideNetworkType
+                        )
                     )
                 } else if (it.telephonyDisplayInfo.networkType != NETWORK_TYPE_UNKNOWN) {
                     DefaultNetworkType(
-                        mobileMappingsProxy.toIconKey(it.telephonyDisplayInfo.networkType),
-                        it.telephonyDisplayInfo.networkType
+                        mobileMappingsProxy.toIconKey(it.telephonyDisplayInfo.networkType)
                     )
                 } else {
                     UnknownNetworkType
@@ -501,6 +353,7 @@ class MobileConnectionRepositoryImpl(
                     false
                 }
             }
+            .flowOn(bgDispatcher)
             .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
     override val carrierId =
@@ -528,12 +381,7 @@ class MobileConnectionRepositoryImpl(
      * See b/322432056 for context.
      */
     @SuppressLint("RegisterReceiverViaContext")
-    override val networkName: StateFlow<NetworkNameModel> = run {
-        var subscriptionManager: SubscriptionManager? =
-            context.getSystemService(SubscriptionManager::class.java)
-        val initial = subscriptionManager?.getActiveSubscriptionInfo(subId)?.let {
-             NetworkNameModel.IntentDerived(it.carrierName.toString())
-        } ?: defaultNetworkName
+    private val networkNameOrDefault: StateFlow<NetworkNameModel> =
         conflatedCallbackFlow {
                 val receiver =
                     object : BroadcastReceiver() {
@@ -561,9 +409,22 @@ class MobileConnectionRepositoryImpl(
                 awaitClose { context.unregisterReceiver(receiver) }
             }
             .flowOn(bgDispatcher)
-            .stateIn(scope, SharingStarted.Eagerly, initial)
-    }
+            .stateIn(scope, SharingStarted.Eagerly, defaultNetworkName)
 
+    /**
+     * Filtered version of networkNameOrDefault that, when in service, uses the carrier name
+     * rather than default network name ("No service").
+     */
+    override val networkName: StateFlow<NetworkNameModel> =
+        combine(isInService, carrierName, networkNameOrDefault) {
+            isInServiceVal, carrierNameVal, networkNameOrDefaultVal ->
+            if (isInServiceVal && (networkNameOrDefaultVal === defaultNetworkName)) {
+                carrierNameVal
+            } else {
+                networkNameOrDefaultVal
+            }
+        }
+        .stateIn(scope, SharingStarted.Eagerly, defaultNetworkName)
 
     override val dataEnabled = run {
         val initial = telephonyManager.isDataConnectionAllowed
@@ -573,217 +434,13 @@ class MobileConnectionRepositoryImpl(
             .stateIn(scope, SharingStarted.WhileSubscribed(), initial)
     }
 
-    override val lteRsrpLevel: StateFlow<Int> =
-        callbackEvents
-            .mapNotNull { it.onSignalStrengthChanged }
-            .map {
-                it.signalStrength.getCellSignalStrengths(CellSignalStrengthLte::class.java).let {
-                    strengths ->
-                        if (strengths.isNotEmpty()) {
-                            when (strengths[0].rsrp) {
-                                SignalStrength.INVALID -> it.signalStrength.level
-                                in -120 until -113 -> SIGNAL_STRENGTH_POOR
-                                in -113 until -105 -> SIGNAL_STRENGTH_MODERATE
-                                in -105 until -97 -> SIGNAL_STRENGTH_GOOD
-                                in -97 until -43 -> SIGNAL_STRENGTH_GREAT
-                                else -> SIGNAL_STRENGTH_NONE_OR_UNKNOWN
-                            }
-                        } else {
-                            it.signalStrength.level
-                        }
-                    }
-            }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), SIGNAL_STRENGTH_NONE_OR_UNKNOWN)
-
-    override val voiceNetworkType: StateFlow<Int> =
-        callbackEvents
-            .mapNotNull { it.onServiceStateChanged }
-            .map { it.serviceState.voiceNetworkType }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), NETWORK_TYPE_UNKNOWN)
-
-    override val dataNetworkType: StateFlow<Int> =
-        callbackEvents
-            .mapNotNull { it.onServiceStateChanged }
-            .map { it.serviceState.dataNetworkType }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), NETWORK_TYPE_UNKNOWN)
-
-    override val nrIconType: StateFlow<Int> =
-        fiveGState
-            .mapNotNull {it.onNrIconTypeChanged }
-            .map { it.nrIconType}
-            .stateIn(scope, SharingStarted.WhileSubscribed(), NrIconType.TYPE_NONE)
-
-    override val is6Rx: StateFlow<Boolean> =
-        fiveGState
-            .mapNotNull {it.onNrIconTypeChanged }
-            .map { it.is6Rx}
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    private val dataRoamingSettingChangedEvent: Flow<Unit> = conflatedCallbackFlow {
-        val observer =
-            object : ContentObserver(null) {
-                override fun onChange(selfChange: Boolean) {
-                    trySend(Unit)
-                }
-            }
-        context.contentResolver.registerContentObserver(
-            Global.getUriFor("${Global.DATA_ROAMING}$subId"),
-            true,
-            observer)
-
-        awaitClose { context.contentResolver.unregisterContentObserver(observer) }
-    }
-
-    override val dataRoamingEnabled: StateFlow<Boolean> = run {
-        val initial = telephonyManager.isDataRoamingEnabled
-        dataRoamingSettingChangedEvent
-            .mapLatest { telephonyManager.isDataRoamingEnabled }
-            .distinctUntilChanged()
-            .logDiffsForTable(
-                    tableLogBuffer,
-                    columnPrefix = "",
-                    columnName = "dataRoamingEnabled",
-                    initialValue = initial,
-            )
-            .stateIn(scope, SharingStarted.WhileSubscribed(), initial)
-    }
-
-    override val originNetworkType: StateFlow<Int> =
-        callbackEvents
-            .mapNotNull { it.onDisplayInfoChanged }
-            .map { it.telephonyDisplayInfo.networkType }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), NETWORK_TYPE_UNKNOWN)
-
-    private fun registerCapabilityAndRegistrationCallback() {
-        if (registrationCallback == null) {
-            registrationCallback =
-                object : RegistrationManager.RegistrationCallback() {
-                    override fun onRegistered(attributes: ImsRegistrationAttributes) {
-                        imsRegistered.value = true
-                        imsRegistrationTech.value = attributes.getRegistrationTechnology()
-                    }
-
-                    override fun onUnregistered(info: ImsReasonInfo) {
-                        imsRegistered.value = false
-                        imsRegistrationTech.value = REGISTRATION_TECH_NONE
-                    }
-                }
-        }
-
-        if (capabilityCallback == null) {
-            capabilityCallback =
-                object : ImsMmTelManager.CapabilityCallback() {
-                    override fun onCapabilitiesStatusChanged(config: MmTelCapabilities) {
-                        voiceCapable.value = config.isCapable(
-                            MmTelCapabilities.CAPABILITY_TYPE_VOICE)
-                        videoCapable.value = config.isCapable(
-                            MmTelCapabilities.CAPABILITY_TYPE_VIDEO)
-                    }
-                }
-        }
-
-        try {
-            registrationCallback?.let {
-                imsMmTelManager.registerImsRegistrationCallback(
-                    context.mainExecutor,it)
-            }
-            capabilityCallback?.let {
-                imsMmTelManager.registerMmTelCapabilityCallback(
-                    context.mainExecutor, it)
-            }
-        } catch (e: ImsException) {
-            Log.e(tag, "failed to call register ims callback ", e)
-        }
-    }
-
-    private fun unregisterCapabilityAndRegistrationCallback() {
-        try {
-            capabilityCallback?.let {
-                imsMmTelManager.unregisterMmTelCapabilityCallback(it)
-            }
-            registrationCallback?.let {
-                imsMmTelManager.unregisterImsRegistrationCallback(it)
-            }
-        } catch (exception: Exception) {
-            Log.e(tag, " failed to call unregister ims callback ", exception)
-
-        }
-        capabilityCallback = null
-        registrationCallback = null
-        imsRegistered.value = false
-        imsRegistrationTech.value = REGISTRATION_TECH_NONE
-        voiceCapable.value = false
-        videoCapable.value = false
-    }
-
-    override val voiceCapable: MutableStateFlow<Boolean> =
-        MutableStateFlow<Boolean>(false)
-
-    override val videoCapable: MutableStateFlow<Boolean> =
-        MutableStateFlow<Boolean>(false)
-
-    override val imsRegistered: MutableStateFlow<Boolean> =
-        MutableStateFlow<Boolean>(false)
-
-    override val imsRegistrationTech: MutableStateFlow<Int> =
-        MutableStateFlow<Int>(REGISTRATION_TECH_NONE)
-
-    override val ciwlanAvailable: StateFlow<Boolean> =
-        fiveGState
-            .mapNotNull {it.onCiwlanAvailableChanged }
-            .map { it.available}
-            .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    override val isConnectionFailed: StateFlow<Boolean> = conflatedCallbackFlow {
-        val callback =
-            object : NetworkCallback(FLAG_INCLUDE_LOCATION_INFO) {
-                override fun onCapabilitiesChanged(
-                    network: Network,
-                    caps: NetworkCapabilities
-                 ) {
-                     trySend(!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
-                 }
-            }
-            connectivityManager.registerNetworkCallback(createNetworkRequest(subId), callback)
-
-            awaitClose { connectivityManager.unregisterNetworkCallback(callback) }
-        }
-        .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.WhileSubscribed(), false)
-
-    private fun createNetworkRequest(specfier: Int): NetworkRequest {
-        return NetworkRequest.Builder()
-                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .setNetworkSpecifier(TelephonyNetworkSpecifier.Builder()
-                        .setSubscriptionId(specfier).build())
-                .build()
-    }
-
-    private fun getSlotIndex(subId: Int): Int {
-        var subscriptionManager: SubscriptionManager? =
-                context.getSystemService(SubscriptionManager::class.java)
-        var list: List<SubscriptionInfo>? = subscriptionManager?.completeActiveSubscriptionInfoList
-        var slotIndex: Int = 0
-        list?.let{
-            for (subscriptionInfo in list.iterator()) {
-                if (subscriptionInfo.subscriptionId == subId) {
-                    slotIndex = subscriptionInfo.simSlotIndex
-                    break
-                }
-            }
-        }
-        Log.d(tag, "getSlotIndex subId: $subId slotIndex: $slotIndex list.size: ${list?.size}")
-        return slotIndex
-    }
-
     override suspend fun isInEcmMode(): Boolean =
         withContext(bgDispatcher) { telephonyManager.emergencyCallbackMode }
 
     /** Typical mobile connections aren't available during airplane mode. */
     override val isAllowedDuringAirplaneMode = MutableStateFlow(false).asStateFlow()
 
-    override val imsState: StateFlow<ImsStateModel> = imsRepository.imsState
+    override val imsState: StateFlow<ImsStateModel> = imsRepo.imsState
 
     /**
      * Currently, a network with NET_CAPABILITY_PRIORITIZE_LATENCY is the only type of network that
@@ -836,7 +493,6 @@ class MobileConnectionRepositoryImpl(
         private val flags: FeatureFlagsClassic,
         @Background private val bgDispatcher: CoroutineDispatcher,
         @Application private val scope: CoroutineScope,
-        private val fiveGServiceClient: FiveGServiceClient,
     ) {
         fun build(
             subId: Int,
@@ -844,7 +500,6 @@ class MobileConnectionRepositoryImpl(
             subscriptionModel: Flow<SubscriptionModel?>,
             defaultNetworkName: NetworkNameModel,
             networkNameSeparator: String,
-            slotIndexForSubId:  Flow<Int>? = null,
             imsRepository: ImsRepository,
         ): MobileConnectionRepository {
             return MobileConnectionRepositoryImpl(
@@ -863,8 +518,6 @@ class MobileConnectionRepositoryImpl(
                 mobileLogger,
                 flags,
                 scope,
-                fiveGServiceClient,
-                slotIndexForSubId,
                 imsRepository,
             )
         }
@@ -894,10 +547,6 @@ sealed interface CallbackEvent {
     data class OnServiceStateChanged(val serviceState: ServiceState) : CallbackEvent
 
     data class OnSignalStrengthChanged(val signalStrength: SignalStrength) : CallbackEvent
-
-    data class OnNrIconTypeChanged(val nrIconType: Int, val is6Rx: Boolean) : CallbackEvent
-
-    data class OnCiwlanAvailableChanged(val available: Boolean): CallbackEvent
 }
 
 /**
@@ -913,8 +562,6 @@ data class TelephonyCallbackState(
     val onDisplayInfoChanged: CallbackEvent.OnDisplayInfoChanged? = null,
     val onServiceStateChanged: CallbackEvent.OnServiceStateChanged? = null,
     val onSignalStrengthChanged: CallbackEvent.OnSignalStrengthChanged? = null,
-    val onNrIconTypeChanged: CallbackEvent.OnNrIconTypeChanged? = null,
-    val onCiwlanAvailableChanged: CallbackEvent.OnCiwlanAvailableChanged? = null,
 ) {
     fun applyEvent(event: CallbackEvent): TelephonyCallbackState {
         return when (event) {
@@ -931,8 +578,6 @@ data class TelephonyCallbackState(
                 copy(onServiceStateChanged = event)
             }
             is CallbackEvent.OnSignalStrengthChanged -> copy(onSignalStrengthChanged = event)
-            is CallbackEvent.OnNrIconTypeChanged -> copy(onNrIconTypeChanged = event)
-            is CallbackEvent.OnCiwlanAvailableChanged -> copy(onCiwlanAvailableChanged = event)
         }
     }
 }

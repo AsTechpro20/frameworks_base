@@ -17,10 +17,13 @@
 package com.android.systemui.qs.footer.ui.viewmodel
 
 import android.content.Context
+import android.os.UserHandle
+import android.provider.Settings
 import android.util.Log
 import android.view.ContextThemeWrapper
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleOwner
 import com.android.settingslib.Utils
 import com.android.systemui.animation.Expandable
@@ -36,11 +39,16 @@ import com.android.systemui.qs.footer.data.model.UserSwitcherStatusModel
 import com.android.systemui.qs.footer.domain.interactor.FooterActionsInteractor
 import com.android.systemui.qs.footer.domain.model.SecurityButtonConfig
 import com.android.systemui.res.R
+import com.android.systemui.statusbar.policy.KeyguardStateController
 import com.android.systemui.util.icuMessageFormat
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Provider
 import kotlin.math.max
+import kotlin.math.min
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +56,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 private const val TAG = "FooterActionsViewModel"
 
@@ -87,18 +97,18 @@ class FooterActionsViewModel(
     val backgroundAlpha: StateFlow<Float> = _backgroundAlpha.asStateFlow()
 
     /** Called when the expansion of the Quick Settings changed. */
-    fun onQuickSettingsExpansionChanged(expansion: Float, isInSplitShade: Boolean) {
+    fun onQuickSettingsExpansionChanged(expansion: Float, isInSplitShade: Boolean, customAlpha: Float) {
         if (isInSplitShade) {
             // In split shade, we want to fade in the background when the QS background starts to
             // show.
             val delay = 0.15f
             _alpha.value = expansion
-            _backgroundAlpha.value = max(0f, expansion - delay) / (1f - delay)
+            _backgroundAlpha.value = min(customAlpha, max(0f, expansion - delay) / (1f - delay))
         } else {
             // Only start fading in the footer actions when we are at least 90% expanded.
             val delay = 0.9f
             _alpha.value = max(0f, expansion - delay) / (1 - delay)
-            _backgroundAlpha.value = 1f
+            _backgroundAlpha.value = customAlpha
         }
     }
 
@@ -112,6 +122,7 @@ class FooterActionsViewModel(
         private val globalActionsDialogLiteProvider: Provider<GlobalActionsDialogLite>,
         private val activityStarter: ActivityStarter,
         @Named(PM_LITE_ENABLED) private val showPowerButton: Boolean,
+        private val keyguardStateController: KeyguardStateController
     ) {
         /** Create a [FooterActionsViewModel] bound to the lifecycle of [lifecycleOwner]. */
         fun create(lifecycleOwner: LifecycleOwner): FooterActionsViewModel {
@@ -138,6 +149,33 @@ class FooterActionsViewModel(
                 globalActionsDialogLite,
                 activityStarter,
                 showPowerButton,
+                keyguardStateController,
+            )
+        }
+
+        @OptIn(ExperimentalCoroutinesApi::class)
+        fun create(lifecycleCoroutineScope: LifecycleCoroutineScope): FooterActionsViewModel {
+            val globalActionsDialogLite = globalActionsDialogLiteProvider.get()
+            if (lifecycleCoroutineScope.isActive) {
+                lifecycleCoroutineScope.launch(start = CoroutineStart.ATOMIC) {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        globalActionsDialogLite.destroy()
+                    }
+                }
+            } else {
+                globalActionsDialogLite.destroy()
+            }
+
+            return FooterActionsViewModel(
+                context,
+                footerActionsInteractor,
+                falsingManager,
+                globalActionsDialogLite,
+                activityStarter,
+                showPowerButton,
+                keyguardStateController,
             )
         }
     }
@@ -150,6 +188,7 @@ fun FooterActionsViewModel(
     globalActionsDialogLite: GlobalActionsDialogLite,
     activityStarter: ActivityStarter,
     showPowerButton: Boolean,
+    keyguardStateController: KeyguardStateController
 ): FooterActionsViewModel {
     suspend fun observeDeviceMonitoringDialogRequests(quickSettingsContext: Context) {
         footerActionsInteractor.deviceMonitoringDialogRequests.collect {
@@ -199,7 +238,21 @@ fun FooterActionsViewModel(
         footerActionsInteractor.showSettings(expandable)
     }
 
+    fun onSettingsButtonLongClicked(expandable: Expandable) {
+        if (falsingManager.isFalseTap(FalsingManager.LOW_PENALTY)) {
+            return
+        }
+
+        return footerActionsInteractor.showCustomSettings(expandable)
+        return
+    }
+
     fun onPowerButtonClicked(expandable: Expandable) {
+        if (keyguardStateController.isShowing() && keyguardStateController.isMethodSecure() 
+                && Settings.System.getIntForUser(appContext.getContentResolver(),
+                Settings.System.LOCKSCREEN_ENABLE_POWER_MENU, 1, UserHandle.USER_CURRENT) == 0) {
+            return
+        }
         if (falsingManager.isFalseTap(FalsingManager.LOW_PENALTY)) {
             return
         }
@@ -254,14 +307,14 @@ fun FooterActionsViewModel(
                         userSwitcherButtonViewModel(
                             qsThemedContext,
                             userSwitcherStatus,
-                            ::onUserSwitcherClicked
+                            ::onUserSwitcherClicked,
                         )
                     }
                 }
             }
             .distinctUntilChanged()
 
-    val settings = settingsButtonViewModel(qsThemedContext, ::onSettingsButtonClicked)
+    val settings = settingsButtonViewModel(qsThemedContext, ::onSettingsButtonClicked, ::onSettingsButtonLongClicked)
     val power =
         if (showPowerButton) {
             powerButtonViewModel(qsThemedContext, ::onPowerButtonClicked)
@@ -347,6 +400,7 @@ private fun userSwitcherContentDescription(
 fun settingsButtonViewModel(
     qsThemedContext: Context,
     onSettingsButtonClicked: (Expandable) -> Unit,
+    onSettingsButtonLongClicked: (Expandable) -> Unit,
 ): FooterActionsButtonViewModel {
     return FooterActionsButtonViewModel(
         id = R.id.settings_button_container,
@@ -361,6 +415,7 @@ fun settingsButtonViewModel(
             ),
         backgroundColor = R.attr.shadeInactive,
         onSettingsButtonClicked,
+        onSettingsButtonLongClicked,
     )
 }
 
@@ -380,6 +435,6 @@ fun powerButtonViewModel(
                 R.attr.onShadeActive,
             ),
         backgroundColor = R.attr.shadeActive,
-        onPowerButtonClicked,
+        onClick = onPowerButtonClicked,
     )
 }

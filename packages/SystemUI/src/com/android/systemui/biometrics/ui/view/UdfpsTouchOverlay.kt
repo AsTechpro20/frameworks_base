@@ -43,21 +43,21 @@ class UdfpsTouchOverlay(context: Context, attrs: AttributeSet?) : FrameLayout(co
         private set
 
     override fun onFinishInflate() {
+        super.onFinishInflate()
         ghbmView = findViewById(R.id.hbm_view)
     }
 
-   fun setUdfpsDisplayModeProvider(udfpsDisplayModeProvider: UdfpsDisplayModeProvider?) {
+    fun setUdfpsDisplayModeProvider(udfpsDisplayModeProvider: UdfpsDisplayModeProvider?) {
         udfpsDisplayMode = udfpsDisplayModeProvider
     }
 
     fun configureDisplay(onDisplayConfigured: Runnable) {
         isDisplayConfigured = true
-        val gView = ghbmView
-        if (gView != null) {
-            gView.setGhbmIlluminationListener(this::doIlluminate)
-            gView.visibility = VISIBLE
-            gView.startGhbmIllumination(onDisplayConfigured)
-        } else {
+        ghbmView?.let { view ->
+            view.setGhbmIlluminationListener(this::doIlluminate)
+            view.visibility = VISIBLE
+            view.startGhbmIllumination(onDisplayConfigured)
+        } ?: {
             doIlluminate(null /* surface */, onDisplayConfigured)
         }
     }

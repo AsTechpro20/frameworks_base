@@ -109,6 +109,9 @@ interface ISystemUiProxy {
     /** Sets home rotation enabled. */
     oneway void setHomeRotationEnabled(boolean enabled) = 45;
 
+    /** Notifies when taskbar is enabled or disabled */
+    oneway void setTaskbarEnabled(boolean enabled) = 500;
+
     /** Notifies when taskbar status updated */
     oneway void notifyTaskbarStatus(boolean visible, boolean stashed) = 47;
 
@@ -120,7 +123,7 @@ interface ISystemUiProxy {
     oneway void notifyTaskbarAutohideSuspend(boolean suspend) = 48;
 
     /**
-     * Notifies SystemUI to invoke IME Switcher.
+     * Notifies that the IME switcher button has been pressed.
      */
     oneway void onImeSwitcherPressed() = 49;
 
@@ -167,5 +170,15 @@ interface ISystemUiProxy {
      */
     oneway void toggleQuickSettingsPanel() = 56;
 
-    // Next id = 57
+    /**
+     * Notifies that the IME Switcher button has been long pressed.
+     */
+    oneway void onImeSwitcherLongPress() = 57;
+
+    /**
+     * Updates contextual education stats when target gesture type is triggered.
+     */
+    oneway void updateContextualEduStats(boolean isTrackpadGesture, String gestureType) = 58;
+
+    // Next id = 59
 }

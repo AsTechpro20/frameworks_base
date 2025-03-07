@@ -32,7 +32,6 @@ import androidx.annotation.VisibleForTesting;
 
 import com.android.settingslib.Utils;
 import com.android.settingslib.graph.SignalDrawable;
-import com.android.systemui.FontSizeUtils;
 import com.android.systemui.res.R;
 import com.android.systemui.statusbar.pipeline.mobile.ui.view.ModernShadeCarrierGroupMobileView;
 import com.android.systemui.util.LargeScreenUtils;
@@ -152,6 +151,11 @@ public class ShadeCarrier extends LinearLayout {
                         com.android.settingslib.R.string.not_default_data_content_description));
     }
 
+    public void updateColors(ColorStateList colorStateList) {
+        mMobileRoaming.setImageTintList(colorStateList);
+        mMobileSignal.setImageTintList(colorStateList);
+    }
+
     @VisibleForTesting
     View getRSSIView() {
         return mMobileGroup;
@@ -161,8 +165,15 @@ public class ShadeCarrier extends LinearLayout {
         mCarrierText.setText(text);
     }
 
+    public void setCarrierTextColor(int color) {
+        mCarrierText.setTextColor(color);
+    }
+
     public void updateTextAppearance(@StyleRes int resId) {
-        FontSizeUtils.updateFontSizeFromStyle(mCarrierText, resId);
+        mCarrierText.setTextAppearance(resId);
+        if (mModernMobileView != null) {
+            mModernMobileView.updateTextAppearance(resId);
+        }
     }
 
     @Override

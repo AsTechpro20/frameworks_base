@@ -71,6 +71,7 @@ public class FloatingRotationButton implements RotationButton {
 
     private AnimatedVectorDrawable mAnimatedDrawable;
     private boolean mIsShowing;
+    private boolean mCanShow = true;
     private int mDisplayRotation;
 
     private boolean mIsTaskbarVisible = false;
@@ -125,6 +126,7 @@ public class FloatingRotationButton implements RotationButton {
                 taskbarMarginLeft, taskbarMarginBottom, floatingRotationButtonPositionLeft);
 
         final int diameter = res.getDimensionPixelSize(mButtonDiameterResource);
+        mKeyButtonView.setDiameter(diameter);
         mContainerSize = diameter + Math.max(defaultMargin, Math.max(taskbarMarginLeft,
                 taskbarMarginBottom));
     }
@@ -148,7 +150,7 @@ public class FloatingRotationButton implements RotationButton {
 
     @Override
     public boolean show() {
-        if (mIsShowing) {
+        if (!mCanShow || mIsShowing) {
             return false;
         }
 
@@ -195,6 +197,7 @@ public class FloatingRotationButton implements RotationButton {
     public void updateIcon(int lightIconColor, int darkIconColor) {
         mAnimatedDrawable = (AnimatedVectorDrawable) mKeyButtonView.getContext()
                 .getDrawable(mRotationButtonController.getIconResId());
+        mAnimatedDrawable.setBounds(0, 0, mKeyButtonView.getWidth(), mKeyButtonView.getHeight());
         mKeyButtonView.setImageDrawable(mAnimatedDrawable);
         mKeyButtonView.setColors(lightIconColor, darkIconColor);
     }
@@ -217,6 +220,14 @@ public class FloatingRotationButton implements RotationButton {
     @Override
     public void setDarkIntensity(float darkIntensity) {
         mKeyButtonView.setDarkIntensity(darkIntensity);
+    }
+
+    @Override
+    public void setCanShowRotationButton(boolean canShow) {
+        mCanShow = canShow;
+        if (!mCanShow) {
+            hide();
+        }
     }
 
     @Override
@@ -248,8 +259,14 @@ public class FloatingRotationButton implements RotationButton {
             updateDimensionResources();
 
             if (mIsShowing) {
+                updateIcon(mRotationButtonController.getLightIconColor(),
+                        mRotationButtonController.getDarkIconColor());
                 final LayoutParams layoutParams = adjustViewPositionAndCreateLayoutParams();
                 mWindowManager.updateViewLayout(mKeyButtonContainer, layoutParams);
+                if (mAnimatedDrawable != null) {
+                    mAnimatedDrawable.reset();
+                    mAnimatedDrawable.start();
+                }
             }
         }
 

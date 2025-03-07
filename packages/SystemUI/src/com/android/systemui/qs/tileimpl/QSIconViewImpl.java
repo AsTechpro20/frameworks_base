@@ -14,6 +14,8 @@
 
 package com.android.systemui.qs.tileimpl;
 
+import static com.android.systemui.Flags.removeUpdateListenerInQsIconViewImpl;
+
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ArgbEvaluator;
@@ -24,9 +26,12 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.graphics.Color;
 import android.graphics.drawable.Animatable2;
 import android.graphics.drawable.Animatable2.AnimationCallback;
 import android.graphics.drawable.Drawable;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.service.quicksettings.Tile;
 import android.util.Log;
 import android.view.View;
@@ -42,10 +47,11 @@ import com.android.systemui.plugins.qs.QSTile.State;
 import com.android.systemui.res.R;
 
 import java.util.Objects;
+import java.util.Random;
 
 public class QSIconViewImpl extends QSIconView {
 
-    public static final long QS_ANIM_LENGTH = 350;
+    public static final long QS_ANIM_LENGTH = 450;
 
     private static final long ICON_APPLIED_TRANSACTION_ID = -1;
 
@@ -204,6 +210,9 @@ public class QSIconViewImpl extends QSIconView {
             values.setEvaluator(ArgbEvaluator.getInstance());
             mColorAnimator.setValues(values);
             mColorAnimator.removeAllListeners();
+            if (removeUpdateListenerInQsIconViewImpl()) {
+                mColorAnimator.removeAllUpdateListeners();
+            }
             mColorAnimator.addUpdateListener(animation -> {
                 setTint(iv, (int) animation.getAnimatedValue());
             });
@@ -255,7 +264,20 @@ public class QSIconViewImpl extends QSIconView {
         } else if (state.state == Tile.STATE_INACTIVE) {
             return Utils.getColorAttrDefaultColor(context, R.attr.onShadeInactiveVariant);
         } else if (state.state == Tile.STATE_ACTIVE) {
-            return Utils.getColorAttrDefaultColor(context, R.attr.onShadeActive);
+            int qsPanelStyle = Settings.System.getIntForUser(context.getContentResolver(),
+                    Settings.System.QS_PANEL_STYLE, 0, UserHandle.USER_CURRENT);
+            if (qsPanelStyle == 1 || qsPanelStyle == 2 || qsPanelStyle == 10) {
+                return Utils.getColorAttrDefaultColor(context, com.android.internal.R.attr.colorAccent);
+            } else if (qsPanelStyle == 3) {
+                Random randomColor = new Random();
+                return Color.rgb((float) 
+                    (randomColor.nextInt(256) / 2f + 0.5),
+                    randomColor.nextInt(256), randomColor.nextInt(256));
+            } else if (qsPanelStyle == 6 || qsPanelStyle == 9) {
+                return Color.WHITE;
+            } else {
+                return Utils.getColorAttrDefaultColor(context, R.attr.onShadeActiveVariant);
+            }
         } else {
             Log.e("QSIconView", "Invalid state " + state);
             return 0;

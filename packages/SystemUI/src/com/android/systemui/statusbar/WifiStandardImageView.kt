@@ -17,18 +17,21 @@ package com.android.systemui.statusbar
 
 import android.content.Context
 import android.database.ContentObserver
-import android.os.UserHandle
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
+import android.os.UserHandle
 import android.provider.Settings
 import android.util.AttributeSet
+import android.util.Log
 import android.widget.ImageView
-import com.android.systemui.R
-
-const val TUNER_KEY = "wifi_standard"
+import com.android.systemui.res.R
+import java.lang.ref.WeakReference
+import android.provider.Settings.Secure.SHOW_WIFI_STANDARD_ICON
 
 class WifiStandardImageView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -43,6 +46,7 @@ class WifiStandardImageView @JvmOverloads constructor(
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var wifiStandardEnabled = false
     private var isRegistered = false
+    private var contentObserver: ContentObserver? = null
 
     init {
         setupContentObserver()
@@ -56,28 +60,50 @@ class WifiStandardImageView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         unregisterNetworkCallback()
+        unregisterContentObserver()
     }
 
     private fun setupContentObserver() {
-        val showWifiStandardIcon = Settings.Secure.getUriFor(TUNER_KEY)
-        val contentObserver = object: ContentObserver(null) {
+        val showWifiStandardIconUri = Settings.Secure.getUriFor(Settings.Secure.SHOW_WIFI_STANDARD_ICON)
+        contentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            private val weakContext = WeakReference(context)
+
             override fun onChange(selfChange: Boolean) {
-                wifiStandardEnabled = Settings.Secure.getIntForUser(context.contentResolver,
-                        TUNER_KEY, 0, UserHandle.USER_CURRENT) == 1
-                if (wifiStandardEnabled) {
-                    showWifiStandard()
-                } else {
-                    unregisterNetworkCallback()
+                weakContext.get()?.let { ctx ->
+                    wifiStandardEnabled = Settings.Secure.getIntForUser(
+                        ctx.contentResolver,
+                        Settings.Secure.SHOW_WIFI_STANDARD_ICON,
+                        0,
+                        UserHandle.USER_CURRENT
+                    ) == 1
+
+                    if (wifiStandardEnabled) {
+                        showWifiStandard()
+                    } else {
+                        unregisterNetworkCallback()
+                        post { visibility = GONE }
+                    }
                 }
             }
         }
-        context.contentResolver.registerContentObserver(
-                showWifiStandardIcon, false, contentObserver, UserHandle.USER_CURRENT)
-        contentObserver.onChange(true)
+        contentObserver?.let {
+            context.contentResolver.registerContentObserver(
+                showWifiStandardIconUri, false, it, UserHandle.USER_CURRENT
+            )
+            it.onChange(true)
+        }
+    }
+
+    private fun unregisterContentObserver() {
+        contentObserver?.let {
+            context.contentResolver.unregisterContentObserver(it)
+            contentObserver = null
+        }
     }
 
     private fun showWifiStandard() {
         if (!wifiStandardEnabled || networkCallback != null) return
+
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 updateWifiStandard(network)
@@ -87,10 +113,7 @@ class WifiStandardImageView @JvmOverloads constructor(
                 updateWifiStandard(null)
             }
 
-            override fun onCapabilitiesChanged(
-                network: Network,
-                networkCapabilities: NetworkCapabilities
-            ) {
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
                 if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
                     updateWifiStandard(network)
                 }
@@ -100,31 +123,25 @@ class WifiStandardImageView @JvmOverloads constructor(
     }
 
     private fun updateWifiStandard(network: Network?) {
-        val wifiStandard = if (network != null) getWifiStandard(network) else -1
+        val wifiStandard = network?.let { getWifiStandard(it) } ?: -1
         updateIcon(wifiStandard)
     }
 
     private fun getWifiStandard(network: Network): Int {
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(network)
-        return if (networkCapabilities != null &&
-                networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-                networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
-            val wifiInfo = wifiManager.connectionInfo
-            wifiInfo.wifiStandard
-        } else {
-            -1
-        }
+        return connectivityManager.getNetworkCapabilities(network)
+            ?.takeIf { it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) }
+            ?.let { wifiManager.connectionInfo.wifiStandard } ?: -1
     }
 
     private fun updateIcon(wifiStandard: Int) {
         val drawableId = getDrawableForWifiStandard(wifiStandard)
         if (!wifiStandardEnabled || drawableId == 0) {
             post { visibility = GONE }
-            return
-        }
-        post {
-            setImageResource(drawableId)
-            visibility = VISIBLE
+        } else {
+            post {
+                setImageResource(drawableId)
+                visibility = VISIBLE
+            }
         }
     }
 
@@ -150,14 +167,13 @@ class WifiStandardImageView @JvmOverloads constructor(
     private fun unregisterNetworkCallback() {
         if (!isRegistered || networkCallback == null) return
         try {
-            networkCallback?.let { connectivityManager.unregisterNetworkCallback(it) }
-            post {
-                visibility = GONE
-            }
+            connectivityManager.unregisterNetworkCallback(networkCallback!!)
         } catch (e: IllegalArgumentException) {
+            Log.e("WifiStandardImageView", "NetworkCallback unregistration failed", e)
         } finally {
             networkCallback = null
             isRegistered = false
         }
+        post { visibility = GONE }
     }
 }

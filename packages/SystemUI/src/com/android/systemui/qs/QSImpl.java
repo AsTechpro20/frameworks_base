@@ -30,6 +30,7 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Rect;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.IndentingPrintWriter;
 import android.util.Log;
 import android.view.View;
@@ -54,6 +55,7 @@ import com.android.systemui.plugins.qs.QSContainerController;
 import com.android.systemui.plugins.statusbar.StatusBarStateController;
 import com.android.systemui.qs.customize.QSCustomizerController;
 import com.android.systemui.qs.dagger.QSComponent;
+import com.android.systemui.qs.flags.QSComposeFragment;
 import com.android.systemui.qs.footer.ui.viewmodel.FooterActionsViewModel;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.res.R;
@@ -66,10 +68,15 @@ import com.android.systemui.statusbar.SysuiStatusBarStateController;
 import com.android.systemui.statusbar.disableflags.DisableFlagsLogger;
 import com.android.systemui.statusbar.notification.stack.StackStateAnimator;
 import com.android.systemui.statusbar.phone.KeyguardBypassController;
+import com.android.systemui.statusbar.policy.BrightnessMirrorController;
 import com.android.systemui.statusbar.policy.RemoteInputQuickSettingsDisabler;
+import com.android.systemui.tuner.TunerService;
+import com.android.systemui.statusbar.policy.SecureLockscreenQSDisabler;
 import com.android.systemui.util.Utils;
 
 import dalvik.annotation.optimization.NeverCompile;
+
+import com.android.systemui.util.MediaArtUtils;
 
 import java.io.PrintWriter;
 import java.util.Arrays;
@@ -79,12 +86,15 @@ import javax.inject.Inject;
 import javax.inject.Named;
 
 public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateController.StateListener,
-        Dumpable {
+        Dumpable, TunerService.Tunable  {
     private static final String TAG = "QS";
     private static final boolean DEBUG = false;
     private static final String EXTRA_EXPANDED = "expanded";
     private static final String EXTRA_LISTENING = "listening";
     private static final String EXTRA_VISIBLE = "visible";
+
+    private static final String QS_TRANSPARENCY =
+            "system:" + Settings.System.QS_TRANSPARENCY;
 
     private final Rect mQsBounds = new Rect();
     private final SysuiStatusBarStateController mStatusBarStateController;
@@ -118,6 +128,7 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
     private final FooterActionsController mFooterActionsController;
     private final FooterActionsViewModel.Factory mFooterActionsViewModelFactory;
     private final ListeningAndVisibilityLifecycleOwner mListeningAndVisibilityLifecycleOwner;
+    private final SecureLockscreenQSDisabler mSecureLockscreenQSDisabler;
     private boolean mShowCollapsedOnKeyguard;
     private boolean mLastKeyguardAndExpanded;
     /**
@@ -172,6 +183,10 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
     @Nullable
     private ComposeView mFooterActionsView;
 
+    private final TunerService mTunerService;
+
+    private float mCustomAlpha = 1f;
+
     @Inject
     public QSImpl(RemoteInputQuickSettingsDisabler remoteInputQsDisabler,
             SysuiStatusBarStateController statusBarStateController, CommandQueue commandQueue,
@@ -182,7 +197,9 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
             DumpManager dumpManager, QSLogger qsLogger,
             FooterActionsController footerActionsController,
             FooterActionsViewModel.Factory footerActionsViewModelFactory,
-            LargeScreenShadeInterpolator largeScreenShadeInterpolator) {
+            LargeScreenShadeInterpolator largeScreenShadeInterpolator,
+            TunerService tunerService,
+            SecureLockscreenQSDisabler secureLockscreenQSDisabler) {
         mRemoteInputQuickSettingsDisabler = remoteInputQsDisabler;
         mQsMediaHost = qsMediaHost;
         mQqsMediaHost = qqsMediaHost;
@@ -199,6 +216,8 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
         if (SceneContainerFlag.isEnabled()) {
             mStatusBarState = StatusBarState.SHADE;
         }
+        mTunerService = tunerService;
+        mSecureLockscreenQSDisabler = secureLockscreenQSDisabler;
     }
 
     /**
@@ -207,6 +226,7 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
      */
     public void onComponentCreated(QSComponent qsComponent, @Nullable Bundle savedInstanceState) {
         mRootView = qsComponent.getRootView();
+        MediaArtUtils.getInstance(mRootView.getContext()).setQSImpl(this);
 
         mQSPanelController = qsComponent.getQSPanelController();
         mQuickQSPanelController = qsComponent.getQuickQSPanelController();
@@ -285,6 +305,8 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
 
         // This will immediately call disable, so it needs to be added after setting up the fields.
         mCommandQueue.addCallback(this);
+
+        mTunerService.addTunable(this, QS_TRANSPARENCY);
     }
 
     private void bindFooterActionsView(View root) {
@@ -324,6 +346,7 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
         if (parent != null) {
             parent.removeView(getView());
         }
+        mTunerService.removeTunable(this);
     }
 
     public void onSaveInstanceState(Bundle outState) {
@@ -355,7 +378,33 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
 
     @Override
     public View getHeader() {
+        QSComposeFragment.assertInLegacyMode();
         return mHeader;
+    }
+
+    @Override
+    public int getHeaderTop() {
+        return mHeader.getTop();
+    }
+
+    @Override
+    public int getHeaderBottom() {
+        return mHeader.getBottom();
+    }
+
+    @Override
+    public int getHeaderLeft() {
+        return mHeader.getLeft();
+    }
+
+    @Override
+    public void getHeaderBoundsOnScreen(Rect outBounds) {
+        mHeader.getBoundsOnScreen(outBounds);
+    }
+
+    @Override
+    public boolean isHeaderShown() {
+        return mHeader.isShown();
     }
 
     @Override
@@ -397,6 +446,18 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
         mQuickQSPanelController.setMediaVisibilityChangedListener(listener);
     }
 
+    @Override
+    public void onTuningChanged(String key, String newValue) {
+        switch (key) {
+            case QS_TRANSPARENCY:
+                mCustomAlpha =
+                        TunerService.parseInteger(newValue, 100) / 100f;
+                break;
+            default:
+                break;
+         }
+    }
+
     private void setEditLocation(View view) {
         View edit = view.findViewById(android.R.id.edit);
         int[] loc = edit.getLocationOnScreen();
@@ -422,6 +483,7 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
         }
         int state2BeforeAdjustment = state2;
         state2 = mRemoteInputQuickSettingsDisabler.adjustDisableFlags(state2);
+        state2 = mSecureLockscreenQSDisabler.adjustDisableFlags(state2);
 
         mQsDisableFlagsLogger.logDisableFlagChange(
                 /* new= */ new DisableFlagsLogger.DisableState(state1, state2BeforeAdjustment),
@@ -500,8 +562,14 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
     }
 
     public void setBrightnessMirrorController(
-            @Nullable MirrorController brightnessMirrorController) {
-        mQSPanelController.setBrightnessMirror(brightnessMirrorController);
+        @Nullable MirrorController brightnessMirrorController) {   
+            mQSPanelController.setBrightnessMirror(brightnessMirrorController);
+            if (brightnessMirrorController instanceof BrightnessMirrorController) {
+                mQuickQSPanelController.setBrightnessMirror(
+                        (BrightnessMirrorController) brightnessMirrorController);
+            } else {
+                mQuickQSPanelController.setBrightnessMirror(null);
+            }
     }
 
     @Override
@@ -676,7 +744,7 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
                 onKeyguardAndExpanded ? 1 : mInSplitShade ? alphaProgress : expansion;
         if (mQSFooterActionsViewModel != null) {
             mQSFooterActionsViewModel.onQuickSettingsExpansionChanged(footerActionsExpansion,
-                    mInSplitShade);
+                    mInSplitShade, mCustomAlpha);
         }
         mQSPanelController.setRevealExpansion(expansion);
         mQSPanelController.getTileLayout().setExpansion(expansion, proposedTranslation);
@@ -719,6 +787,16 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
             mQsMediaHost.setSquishFraction(mSquishinessFraction);
         }
         updateMediaPositions();
+        if (!fullyCollapsed) {
+            MediaArtUtils.getInstance(mRootView.getContext()).hideMediaArt();
+        } else {
+            MediaArtUtils.getInstance(mRootView.getContext()).updateMediaArtVisibility();   
+        }
+        if (fullyCollapsed) {
+            com.android.systemui.util.WallpaperDepthUtils.getInstance(mRootView.getContext()).updateDepthWallpaper();
+        } else {
+            com.android.systemui.util.WallpaperDepthUtils.getInstance(getContext()).hideDepthWallpaper();
+        }
     }
 
     private void setAlphaAnimationProgress(float progress) {
@@ -965,8 +1043,22 @@ public class QSImpl implements QS, CommandQueue.Callbacks, StatusBarStateControl
         return mContainer.getQqsHeight();
     }
 
+    /**
+     * @return height with the squishiness fraction applied.
+     */
+    public int getSquishedQqsHeight() {
+        return mContainer.getSquishedQqsHeight();
+    }
+
     public int getQSHeight() {
         return mContainer.getQsHeight();
+    }
+
+    /**
+     * @return height with the squishiness fraction applied.
+     */
+    public int getSquishedQsHeight() {
+        return mContainer.getSquishedQsHeight();
     }
 
     /**

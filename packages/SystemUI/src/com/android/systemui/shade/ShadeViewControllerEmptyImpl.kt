@@ -85,6 +85,7 @@ open class ShadeViewControllerEmptyImpl @Inject constructor() :
     override fun handleExternalInterceptTouch(event: MotionEvent): Boolean {
         return false
     }
+    override fun fling(vel: Float, expand: Boolean, expandBecauseOfFalsing: Boolean) {}
 
     override fun startInputFocusTransfer() {}
     override fun cancelInputFocusTransfer() {}
@@ -94,6 +95,11 @@ open class ShadeViewControllerEmptyImpl @Inject constructor() :
     @Deprecated("Use SceneInteractor.currentScene instead.")
     override val legacyPanelExpansion = flowOf(0f)
     override val udfpsTransitionToFullShadeProgress = MutableStateFlow(0f)
+    override fun setBlockedGesturalNavigation(blocked: Boolean) {} 
+    override fun showIsland(show: Boolean) {}
+
+    override fun getScrollerLayoutController(): com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayoutController? = null
+    override fun getKeyguardBottomAreaView(): com.android.systemui.statusbar.phone.KeyguardBottomAreaView? = null
 }
 
 class ShadeHeadsUpTrackerEmptyImpl : ShadeHeadsUpTracker {

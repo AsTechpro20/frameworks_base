@@ -16,15 +16,13 @@
 
 package com.android.systemui.settings.brightness;
 
-import static com.android.systemui.Flags.hapticBrightnessSlider;
-
 import android.content.Context;
 import android.content.Intent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CompoundButton;
+import android.widget.ImageView;
 import android.widget.SeekBar;
 
 import androidx.annotation.Nullable;
@@ -62,6 +60,7 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
     private ToggleSlider mMirror;
     @Nullable
     private MirrorController mMirrorController;
+    private ImageView mIcon;
     private boolean mTracking;
     private final FalsingManager mFalsingManager;
     private final UiEventLogger mUiEventLogger;
@@ -97,6 +96,7 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
         mUiEventLogger = uiEventLogger;
         mBrightnessSliderHapticPlugin = brightnessSliderHapticPlugin;
         mActivityStarter = activityStarter;
+        mIcon = mView.findViewById(R.id.brightness_icon);
     }
 
     /**
@@ -106,13 +106,13 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
         return mView;
     }
 
+    public ImageView getIcon() {
+        return mIcon;
+    }
 
     @Override
     protected void onViewAttached() {
         mView.setOnSeekBarChangeListener(mSeekListener);
-        if (!mView.setOnCheckedChangeListener(mToggleChangeListener)) {
-            mToggleChangeListener = null;
-        }
         mView.setOnInterceptListener(mOnInterceptListener);
         if (mMirror != null) {
             mView.setOnDispatchTouchEventListener(this::mirrorTouchEvent);
@@ -122,7 +122,6 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
     @Override
     protected void onViewDetached() {
         mView.setOnSeekBarChangeListener(null);
-        mView.setOnCheckedChangeListener(null);
         mView.setOnDispatchTouchEventListener(null);
         mView.setOnInterceptListener(null);
     }
@@ -165,7 +164,6 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
         if (mMirror != null) {
             mMirror.setMax(mView.getMax());
             mMirror.setValue(mView.getValue());
-            mMirror.setToggleValue(mView.getToggleValue());
             mView.setOnDispatchTouchEventListener(this::mirrorTouchEvent);
         } else {
             // If there's no mirror, we may be the ones dispatching, events but we should not mirror
@@ -221,19 +219,6 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
     }
 
     @Override
-    public void setToggleValue(boolean value) {
-        mView.setToggleValue(value);
-        if (mMirror != null) {
-            mMirror.setToggleValue(value);
-        }
-    }
-
-    @Override
-    public boolean getToggleValue() {
-        return mView.getToggleValue();
-    }
-
-    @Override
     public void hideView() {
         mView.setVisibility(View.GONE);
     }
@@ -256,6 +241,7 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
             new SeekBar.OnSeekBarChangeListener() {
         @Override
         public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+            mView.GetValueBrightness(progress);
             if (mListener != null) {
                 mListener.onChanged(mTracking, progress, false);
                 if (fromUser) {
@@ -294,13 +280,6 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
         }
     };
 
-    private CompoundButton.OnCheckedChangeListener mToggleChangeListener =
-            (buttonView, isChecked) -> {
-                if (mListener != null) {
-                    mListener.onCheckedChanged(isChecked);
-                }
-            };
-
     /**
      * Creates a {@link BrightnessSliderController} with its associated view.
      */
@@ -338,22 +317,14 @@ public class BrightnessSliderController extends ViewController<BrightnessSliderV
                 Context context,
                 @Nullable ViewGroup viewRoot) {
             int layout = getLayout();
-            boolean hasAutoBrightness = context.getResources().getBoolean(
-                    com.android.internal.R.bool.config_automatic_brightness_available);
-            LayoutInflater inflater = LayoutInflater.from(context);
-
-            BrightnessSliderView root = (BrightnessSliderView) inflater
+            BrightnessSliderView root = (BrightnessSliderView) LayoutInflater.from(context)
                     .inflate(layout, viewRoot, false);
             SeekbarHapticPlugin plugin = new SeekbarHapticPlugin(
                     mVibratorHelper,
                     mSystemClock);
-            if (hapticBrightnessSlider()) {
-                HapticSliderViewBinder.bind(viewRoot, plugin);
-            }
-            if (hasAutoBrightness) {
-                inflater.inflate(R.layout.quick_settings_auto_brightness, root, true);
-            }
-            return new BrightnessSliderController(root, mFalsingManager, mUiEventLogger, plugin, mActivityStarter);
+            HapticSliderViewBinder.bind(viewRoot, plugin);
+            return new BrightnessSliderController(
+                    root, mFalsingManager, mUiEventLogger, plugin, mActivityStarter);
         }
 
         /** Get the layout to inflate based on what slider to use */

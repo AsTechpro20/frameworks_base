@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
-*
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -16,6 +16,7 @@
 
 package com.android.systemui.statusbar.pipeline.satellite.ui.viewmodel
 
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import com.android.systemui.SysuiTestCase
 import com.android.systemui.common.shared.model.Icon
@@ -40,11 +41,13 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
+import org.junit.runner.RunWith
 import org.mockito.MockitoAnnotations
 import org.mockito.kotlin.mock
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @SmallTest
+@RunWith(AndroidJUnit4::class)
 class DeviceBasedSatelliteViewModelTest : SysuiTestCase() {
     private lateinit var underTest: DeviceBasedSatelliteViewModel
     private lateinit var interactor: DeviceBasedSatelliteInteractor
@@ -155,26 +158,6 @@ class DeviceBasedSatelliteViewModelTest : SysuiTestCase() {
 
             // GIVEN satellite is allowed
             repo.isSatelliteAllowedForCurrentLocation.value = false
-
-            // GIVEN all icons are OOS
-            val i1 = mobileIconsInteractor.getMobileConnectionInteractorForSubId(1)
-            i1.isInService.value = false
-            i1.isEmergencyOnly.value = false
-
-            // GIVEN apm is disabled
-            airplaneModeRepository.setIsAirplaneMode(false)
-
-            // THEN icon is null because it is not allowed
-            assertThat(latest).isNull()
-        }
-
-    @Test
-    fun icon_null_allOosAndConfigIsFalse() =
-        testScope.runTest {
-            val latest by collectLastValue(underTest.icon)
-
-            // GIVEN config for opportunistic icon is false
-            repo.isOpportunisticSatelliteIconEnabled = false
 
             // GIVEN all icons are OOS
             val i1 = mobileIconsInteractor.getMobileConnectionInteractorForSubId(1)
@@ -392,7 +375,7 @@ class DeviceBasedSatelliteViewModelTest : SysuiTestCase() {
             repo.isSatelliteProvisioned.value = true
 
             // GIVEN wifi network is active
-            wifiRepository.setWifiNetwork(WifiNetworkModel.Active(networkId = 0, level = 1))
+            wifiRepository.setWifiNetwork(WifiNetworkModel.Active.of(level = 1))
 
             // THEN icon is null because the device is connected to wifi
             assertThat(latest).isNull()
@@ -590,7 +573,7 @@ class DeviceBasedSatelliteViewModelTest : SysuiTestCase() {
             repo.isSatelliteProvisioned.value = true
 
             // GIVEN wifi network is active
-            wifiRepository.setWifiNetwork(WifiNetworkModel.Active(networkId = 0, level = 1))
+            wifiRepository.setWifiNetwork(WifiNetworkModel.Active.of(level = 1))
 
             // THEN carrier text is null because the device is connected to wifi
             assertThat(latest).isNull()

@@ -42,13 +42,10 @@ import com.android.systemui.statusbar.pipeline.mobile.data.model.ResolvedNetwork
 import com.android.systemui.statusbar.pipeline.mobile.data.model.SubscriptionModel
 import com.android.systemui.statusbar.pipeline.mobile.data.model.SystemUiCarrierConfig
 import com.android.systemui.statusbar.pipeline.mobile.data.model.SystemUiCarrierConfigTest
-import com.android.systemui.statusbar.pipeline.mobile.data.repository.FakeMobileConnectionsRepository
 import com.android.systemui.statusbar.pipeline.mobile.data.repository.prod.MobileTelephonyHelpers.getTelephonyCallbackForType
 import com.android.systemui.statusbar.pipeline.mobile.data.repository.prod.MobileTelephonyHelpers.signalStrength
 import com.android.systemui.statusbar.pipeline.mobile.util.FakeMobileMappingsProxy
 import com.android.systemui.statusbar.pipeline.shared.data.model.DataActivityModel
-import com.android.systemui.statusbar.policy.FiveGServiceClient
-import com.android.systemui.statusbar.policy.FiveGServiceClient.FiveGServiceState
 import com.android.systemui.util.mockito.mock
 import com.android.systemui.util.mockito.whenever
 import com.google.common.truth.Truth.assertThat
@@ -99,7 +96,6 @@ import org.mockito.MockitoAnnotations
 @SmallTest
 class MobileConnectionTelephonySmokeTests : SysuiTestCase() {
     private lateinit var underTest: MobileConnectionRepositoryImpl
-    private lateinit var connectionsRepo: FakeMobileConnectionsRepository
 
     private val flags =
         FakeFeatureFlagsClassic().also { it.set(Flags.ROAMING_INDICATOR_VIA_DISPLAY_INFO, true) }
@@ -116,7 +112,6 @@ class MobileConnectionTelephonySmokeTests : SysuiTestCase() {
             SUB_1_ID,
             SystemUiCarrierConfigTest.createTestConfig(),
         )
-    private val fiveGServiceClient = FiveGServiceClient(mContext)
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private val testScope = TestScope(testDispatcher)
@@ -126,16 +121,10 @@ class MobileConnectionTelephonySmokeTests : SysuiTestCase() {
         MockitoAnnotations.initMocks(this)
         whenever(telephonyManager.subscriptionId).thenReturn(SUB_1_ID)
 
-        connectionsRepo =
-            FakeMobileConnectionsRepository(
-                mobileMappings,
-                tableLogger,
-            )
-
         underTest =
             MobileConnectionRepositoryImpl(
                 SUB_1_ID,
-                mContext,
+                context,
                 subscriptionModel,
                 DEFAULT_NAME,
                 SEP,
@@ -149,7 +138,6 @@ class MobileConnectionTelephonySmokeTests : SysuiTestCase() {
                 tableLogger,
                 flags,
                 testScope.backgroundScope,
-                fiveGServiceClient,
             )
     }
 

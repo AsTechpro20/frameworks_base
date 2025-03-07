@@ -24,6 +24,9 @@
         coreApp="true">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
+    <uses-permission android:name="com.google.restricted_assist_gesture.permission.RESTRICTED_ASSIST_GESTURE_PROVIDER" />
 
     <!-- Used to read wallpaper -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -48,7 +51,6 @@
     <uses-permission android:name="android.permission.MANAGE_USERS" />
     <uses-permission android:name="android.permission.READ_PROFILE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <uses-permission android:name="android.permission.CONFIGURE_WIFI_DISPLAY" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.GET_APP_OPS_STATS" />
     <uses-permission android:name="android.permission.USE_RESERVED_DISK" />
@@ -57,6 +59,7 @@
     <uses-permission android:name="android.permission.MANAGE_CONTENT_SUGGESTIONS"/>
 
     <!-- Networking and telephony -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
@@ -68,6 +71,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_PRECISE_PHONE_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -92,6 +96,7 @@
     <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
     <uses-permission android:name="android.permission.MASTER_CLEAR" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.VIBRATE_SYSTEM_CONSTANTS" />
     <uses-permission android:name="android.permission.MANAGE_SENSOR_PRIVACY" />
     <uses-permission android:name="android.permission.OBSERVE_SENSOR_PRIVACY" />
     <uses-permission android:name="android.permission.ACCESS_AMBIENT_CONTEXT_EVENT" />
@@ -206,6 +211,9 @@
 
     <permission android:name="android.permission.CUSTOMIZE_SYSTEM_UI"
         android:protectionLevel="signature|privileged" />
+
+    <permission android:name="com.android.systemui.permission.SCREEN_RECORDING"
+            android:protectionLevel="signature" />
 
     <!-- Adding Quick Settings tiles -->
     <uses-permission android:name="android.permission.BIND_QUICK_SETTINGS_TILE" />
@@ -338,11 +346,12 @@
     <!-- Permission to make accessibility service access Bubbles -->
     <uses-permission android:name="android.permission.ADD_TRUSTED_DISPLAY" />
 
-    <!-- Permission for Smartspace. -->
-    <uses-permission android:name="android.permission.MANAGE_SMARTSPACE"/>
+    <!-- Permission needed for Arcane Idle Manager -->
+    <!-- Kill processes -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES"/>
 
-    <!-- Permission to access ExtTelephony bound service -->
-    <uses-permission android:name="com.qualcomm.qti.permission.USE_EXT_TELEPHONY_SERVICE" />
+    <!-- Permission for Smartspace. -->
+    <uses-permission android:name="android.permission.MANAGE_SMARTSPACE" />
 
     <uses-permission android:name="android.permission.READ_PEOPLE_DATA" />
 
@@ -373,17 +382,41 @@
 
     <uses-permission android:name="android.permission.MONITOR_STICKY_MODIFIER_STATE" />
 
+    <!-- Listen to keyboard shortcut events from input manager -->
+    <uses-permission android:name="android.permission.MANAGE_KEY_GESTURES" />
+
     <!-- To follow the grammatical gender preference -->
     <uses-permission android:name="android.permission.READ_SYSTEM_GRAMMATICAL_GENDER" />
 
     <!-- Listen to (dis-)connection of external displays and enable / disable them. -->
     <uses-permission android:name="android.permission.MANAGE_DISPLAYS" />
 
+    <!-- To be able to intercept meta key events, might need to be removed once b/358569822
+         is ready -->
+    <uses-permission android:name="android.permission.OVERRIDE_SYSTEM_KEY_BEHAVIOR_IN_FOCUSED_WINDOW" />
+
+    <!-- DataSwitch tile -->
+    <uses-permission android:name="android.permission.WRITE_APN_SETTINGS" />
+
+    <!-- To broadcast status of the GameSpaceManager -->
+    <uses-permission android:name="android.permission.MANAGE_GAME_MODE" />
+
+    <!-- Pulse -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- OmniJaws -->
+    <uses-permission android:name="org.omnirom.omnijaws.READ_WEATHER" />
+    
+    <!-- Disable Google clocks -->
+    <uses-permission android:name="android.permission.CHANGE_COMPONENT_ENABLED_STATE" />
+
     <protected-broadcast android:name="com.android.settingslib.action.REGISTER_SLICE_RECEIVER" />
     <protected-broadcast android:name="com.android.settingslib.action.UNREGISTER_SLICE_RECEIVER" />
     <protected-broadcast android:name="com.android.settings.flashlight.action.FLASHLIGHT_CHANGED" />
     <protected-broadcast android:name="com.android.systemui.action.ACTION_LAUNCH_MEDIA_OUTPUT_BROADCAST_DIALOG" />
     <protected-broadcast android:name="com.android.systemui.STARTED" />
+
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
 
     <application
         android:name=".SystemUIApplication"
@@ -435,7 +468,7 @@
         <service android:name=".screenshot.TakeScreenshotService"
             android:permission="com.android.systemui.permission.SELF"
             android:process=":screenshot"
-            android:exported="false" />
+            android:exported="true" />
 
         <!-- Called from PhoneWindowManager -->
         <receiver android:name=".screenshot.ScreenshotServiceErrorReceiver"
@@ -483,9 +516,22 @@
 
         <activity android:name=".touchpad.tutorial.ui.view.TouchpadTutorialActivity"
             android:exported="true"
+            android:showForAllUsers="true"
+            android:screenOrientation="userLandscape"
             android:theme="@style/Theme.AppCompat.NoActionBar">
             <intent-filter>
                 <action android:name="com.android.systemui.action.TOUCHPAD_TUTORIAL"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".inputdevice.tutorial.ui.view.KeyboardTouchpadTutorialActivity"
+            android:exported="true"
+            android:showForAllUsers="true"
+            android:screenOrientation="userLandscape"
+            android:theme="@style/Theme.AppCompat.NoActionBar">
+            <intent-filter>
+                <action android:name="com.android.systemui.action.TOUCHPAD_KEYBOARD_TUTORIAL"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
@@ -501,10 +547,21 @@
             android:permission="android.permission.LAUNCH_CAPTURE_CONTENT_ACTIVITY_FOR_NOTE" />
 
         <service android:name=".screenrecord.RecordingService"
-                 android:foregroundServiceType="systemExempted"/>
+            android:foregroundServiceType="systemExempted"
+            android:exported="true"
+            android:permission="com.android.systemui.permission.SCREEN_RECORDING">
+            <intent-filter>
+                <action android:name="com.android.systemui.screenrecord.RecordingService" />
+            </intent-filter>
+        </service>
 
         <service android:name=".recordissue.IssueRecordingService"
                  android:foregroundServiceType="systemExempted"/>
+
+        <!-- started from PhoneWindowManager -->
+        <service android:name=".infinity.onthego.OnTheGoService"
+            android:process=":onthego"
+            android:exported="true" />
 
         <receiver android:name=".SysuiRestartReceiver"
             android:exported="false">
@@ -512,6 +569,19 @@
                 <action android:name="com.android.systemui.action.RESTART" />
 
                 <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+        
+        <!-- Smart Pixels -->
+        <service android:name=".smartpixels.SmartPixelsService"
+            android:enabled="true" />
+
+        <service android:name="com.android.systemui.CPUInfoService"
+                android:exported="true" />
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
@@ -526,6 +596,7 @@
                   android:theme="@style/Theme.SubSettingsBase"
                   android:label="@string/system_ui_tuner"
                   android:process=":tuner"
+                  android:enableOnBackInvokedCallback="true"
                   android:exported="true">
             <intent-filter>
                 <action android:name="com.android.settings.action.EXTRA_SETTINGS" />
@@ -550,22 +621,12 @@
             </intent-filter>
         </activity-alias>
 
-        <activity-alias
-            android:name=".tuner.StatusBarTuner"
-            android:targetActivity=".tuner.TunerActivity"
-            android:icon="@drawable/tuner"
-            android:theme="@style/Theme.SubSettingsBase"
-            android:label="@string/status_bar_icons_title"
-            android:process=":tuner"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.android.settings.action.STATUS_BAR_TUNER" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity-alias>
-
         <!-- Callback for deleting screenshot notification -->
         <receiver android:name=".screenshot.DeleteScreenshotReceiver"
+            android:exported="false" />
+
+        <!-- Callback for Google Lens screenshot notification -->
+        <receiver android:name=".screenshot.LensScreenshotReceiver"
             android:exported="false" />
 
         <!-- Callback for invoking a smart action from the screenshot notification. -->
@@ -1066,7 +1127,6 @@
                 <action android:name="com.android.systemui.action.DISMISS_MEDIA_OUTPUT_DIALOG" />
             </intent-filter>
         </receiver>
-        <uses-library android:name="com.qti.extphone.extphonelib"/>
 
         <receiver android:name=".volume.VolumePanelDialogReceiver"
                   android:exported="true">
@@ -1084,10 +1144,62 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name=".accessibility.extradim.ExtraDimDialogReceiver"
+            android:singleUser="true"
+            android:exported="false">
+            <intent-filter android:priority="1">
+                <action android:name="com.android.systemui.action.LAUNCH_REMOVE_EXTRA_DIM_DIALOG" />
+            </intent-filter>
+        </receiver>
+
         <activity android:name=".logcat.LogAccessDialogActivity"
                   android:theme="@android:style/Theme.Translucent.NoTitleBar"
                   android:excludeFromRecents="true"
                   android:exported="false">
+        </activity>
+
+        <activity
+            android:name="com.android.systemui.statusbar.phone.LeftBackSwipeCustomApp"
+            android:theme="@android:style/Theme.DeviceDefault.Light.Dialog.MinWidth"
+            android:label="@string/app_picker_dialog_title"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.systemui.statusbar.phone.LeftBackSwipeCustomApp" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.android.systemui.statusbar.phone.RightBackSwipeCustomApp"
+            android:theme="@android:style/Theme.DeviceDefault.Light.Dialog.MinWidth"
+            android:label="@string/app_picker_dialog_title"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.systemui.statusbar.phone.RightBackSwipeCustomApp" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.android.systemui.statusbar.phone.LeftBackVerticalSwipeCustomApp"
+            android:theme="@android:style/Theme.DeviceDefault.Light.Dialog.MinWidth"
+            android:label="@string/app_picker_dialog_title"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.systemui.statusbar.phone.LeftBackVerticalSwipeCustomApp" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.android.systemui.statusbar.phone.RightBackVerticalSwipeCustomApp"
+            android:theme="@android:style/Theme.DeviceDefault.Light.Dialog.MinWidth"
+            android:label="@string/app_picker_dialog_title"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="com.android.systemui.statusbar.phone.RightBackVerticalSwipeCustomApp" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <provider

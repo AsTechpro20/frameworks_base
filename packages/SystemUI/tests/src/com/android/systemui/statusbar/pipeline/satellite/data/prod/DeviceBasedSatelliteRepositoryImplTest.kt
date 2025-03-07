@@ -38,6 +38,7 @@ import android.telephony.satellite.SatelliteManager.SatelliteException
 import android.telephony.satellite.SatelliteModemStateCallback
 import android.telephony.satellite.SatelliteProvisionStateCallback
 import android.telephony.satellite.SatelliteSupportedStateCallback
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import com.android.systemui.SysuiTestCase
 import com.android.systemui.coroutines.collectLastValue
@@ -58,6 +59,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
+import org.junit.runner.RunWith
 import org.mockito.Mock
 import org.mockito.Mockito
 import org.mockito.Mockito.atLeastOnce
@@ -71,6 +73,7 @@ import org.mockito.kotlin.doThrow
 @Suppress("EXPERIMENTAL_IS_NOT_ENABLED")
 @OptIn(ExperimentalCoroutinesApi::class)
 @SmallTest
+@RunWith(AndroidJUnit4::class)
 class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     private lateinit var underTest: DeviceBasedSatelliteRepositoryImpl
 
@@ -99,7 +102,6 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
                     logBuffer = FakeLogBuffer.Factory.create(),
                     verboseLogBuffer = FakeLogBuffer.Factory.create(),
                     systemClock,
-                    context.resources,
                 )
 
             val connectionState by collectLastValue(underTest.connectionState)
@@ -265,7 +267,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun satelliteProvisioned_notSupported_defaultFalse() =
         testScope.runTest {
             // GIVEN satellite is not supported
-            setUpRepo(uptime = MIN_UPTIME, satMan = satelliteManager, satelliteSupported = false)
+            setUpRepo(
+                uptime = MIN_UPTIME,
+                satMan = satelliteManager,
+                satelliteSupported = false,
+            )
 
             assertThat(underTest.isSatelliteProvisioned.value).isFalse()
         }
@@ -274,7 +280,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun satelliteProvisioned_supported_defaultFalse() =
         testScope.runTest {
             // GIVEN satellite is supported
-            setUpRepo(uptime = MIN_UPTIME, satMan = satelliteManager, satelliteSupported = true)
+            setUpRepo(
+                uptime = MIN_UPTIME,
+                satMan = satelliteManager,
+                satelliteSupported = true,
+            )
 
             // THEN default provisioned state is false
             assertThat(underTest.isSatelliteProvisioned.value).isFalse()
@@ -313,7 +323,6 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
                     logBuffer = FakeLogBuffer.Factory.create(),
                     verboseLogBuffer = FakeLogBuffer.Factory.create(),
                     systemClock,
-                    context.resources,
                 )
 
             // WHEN we try to check for provisioned status
@@ -352,7 +361,6 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
                     logBuffer = FakeLogBuffer.Factory.create(),
                     verboseLogBuffer = FakeLogBuffer.Factory.create(),
                     systemClock,
-                    context.resources,
                 )
 
             // WHEN we try to check for provisioned status
@@ -437,7 +445,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun satelliteProvisioned_supported_tracksCallback_reRegistersOnCrash() =
         testScope.runTest {
             // GIVEN satellite is supported
-            setUpRepo(uptime = MIN_UPTIME, satMan = satelliteManager, satelliteSupported = true)
+            setUpRepo(
+                uptime = MIN_UPTIME,
+                satMan = satelliteManager,
+                satelliteSupported = true,
+            )
 
             val provisioned by collectLastValue(underTest.isSatelliteProvisioned)
 
@@ -475,7 +487,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun satelliteNotSupported_listenersAreNotRegistered() =
         testScope.runTest {
             // GIVEN satellite is not supported
-            setUpRepo(uptime = MIN_UPTIME, satMan = satelliteManager, satelliteSupported = false)
+            setUpRepo(
+                uptime = MIN_UPTIME,
+                satMan = satelliteManager,
+                satelliteSupported = false,
+            )
 
             // WHEN data is requested from the repo
             val connectionState by collectLastValue(underTest.connectionState)
@@ -501,7 +517,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun satelliteNotSupported_registersCallbackForStateChanges() =
         testScope.runTest {
             // GIVEN satellite is not supported
-            setUpRepo(uptime = MIN_UPTIME, satMan = satelliteManager, satelliteSupported = false)
+            setUpRepo(
+                uptime = MIN_UPTIME,
+                satMan = satelliteManager,
+                satelliteSupported = false,
+            )
 
             runCurrent()
             // THEN the repo registers for state changes of satellite support
@@ -557,7 +577,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun satelliteNotSupported_supportShowsUp_registersListeners() =
         testScope.runTest {
             // GIVEN satellite is not supported
-            setUpRepo(uptime = MIN_UPTIME, satMan = satelliteManager, satelliteSupported = false)
+            setUpRepo(
+                uptime = MIN_UPTIME,
+                satMan = satelliteManager,
+                satelliteSupported = false,
+            )
             runCurrent()
 
             val callback =
@@ -586,7 +610,11 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
     fun repoDoesNotCheckForSupportUntilMinUptime() =
         testScope.runTest {
             // GIVEN we init 100ms after sysui starts up
-            setUpRepo(uptime = 100, satMan = satelliteManager, satelliteSupported = true)
+            setUpRepo(
+                uptime = 100,
+                satMan = satelliteManager,
+                satelliteSupported = true,
+            )
 
             // WHEN data is requested
             val connectionState by collectLastValue(underTest.connectionState)
@@ -698,7 +726,6 @@ class DeviceBasedSatelliteRepositoryImplTest : SysuiTestCase() {
                 logBuffer = FakeLogBuffer.Factory.create(),
                 verboseLogBuffer = FakeLogBuffer.Factory.create(),
                 systemClock,
-                context.resources,
             )
     }
 

@@ -16,11 +16,18 @@
 
 package com.android.systemui.media.controls.ui.viewmodel
 
+import android.content.Context
+import android.content.ContentResolver
+import android.database.ContentObserver
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.PlaybackState
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.os.Trace
+import android.os.UserHandle
+import android.provider.Settings
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
@@ -32,6 +39,7 @@ import androidx.annotation.WorkerThread
 import androidx.core.view.GestureDetectorCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.android.systemui.Flags
 import com.android.systemui.classifier.Classifier.MEDIA_SEEKBAR
 import com.android.systemui.dagger.qualifiers.Background
 import com.android.systemui.plugins.FalsingManager
@@ -81,6 +89,7 @@ private fun PlaybackState.computePosition(duration: Long): Long {
 class SeekBarViewModel
 @Inject
 constructor(
+    private val context: Context,
     @Background private val bgExecutor: RepeatableExecutor,
     private val falsingManager: FalsingManager,
 ) {
@@ -90,6 +99,7 @@ constructor(
             seekAvailable = false,
             playing = false,
             scrubbing = false,
+            enableSquiggle = false,
             elapsedTime = null,
             duration = 0,
             listening = false
@@ -102,9 +112,11 @@ constructor(
             }
             _progress.postValue(value)
         }
+
     private val _progress = MutableLiveData<Progress>().apply { postValue(_data) }
     val progress: LiveData<Progress>
         get() = _progress
+
     private var controller: MediaController? = null
         set(value) {
             if (field?.sessionToken != value?.sessionToken) {
@@ -113,6 +125,7 @@ constructor(
                 field = value
             }
         }
+
     private var playbackState: PlaybackState? = null
     private var callback =
         object : MediaController.Callback() {
@@ -127,6 +140,15 @@ constructor(
 
             override fun onSessionDestroyed() {
                 clearController()
+            }
+
+            override fun onMetadataChanged(metadata: MediaMetadata?) {
+                if (!Flags.mediaControlsPostsOptimization()) return
+
+                val (enabled, duration) = getEnabledStateAndDuration(metadata)
+                if (_data.duration != duration) {
+                    _data = _data.copy(enabled = enabled, duration = duration)
+                }
             }
         }
     private var cancel: Runnable? = null
@@ -233,24 +255,31 @@ constructor(
     fun updateController(mediaController: MediaController?) {
         controller = mediaController
         playbackState = controller?.playbackState
-        val mediaMetadata = controller?.metadata
+        val (enabled, duration) = getEnabledStateAndDuration(controller?.metadata)
         val seekAvailable = ((playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO) != 0L
         val position = playbackState?.position?.toInt()
-        val duration = mediaMetadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.toInt() ?: 0
-        val playing =
-            NotificationMediaManager.isPlayingState(
-                playbackState?.state ?: PlaybackState.STATE_NONE
-            )
-        val enabled =
-            if (
-                playbackState == null ||
-                    playbackState?.getState() == PlaybackState.STATE_NONE ||
-                    (duration <= 0)
-            )
-                false
-            else true
-        _data = Progress(enabled, seekAvailable, playing, scrubbing, position, duration, listening)
+        val playing = NotificationMediaManager
+                .isPlayingState(playbackState?.state ?: PlaybackState.STATE_NONE)
+        val enableSquiggle = Settings.Secure.getIntForUser(context.getContentResolver(),
+                Settings.Secure.SHOW_MEDIA_SQUIGGLE_ANIMATION, 1, UserHandle.USER_CURRENT) != 0
+        _data = Progress(enabled, seekAvailable, playing, scrubbing, enableSquiggle, position, duration, listening)
         checkIfPollingNeeded()
+    }
+    
+    init {
+        val contentResolver = context.contentResolver
+        val handler = Handler(Looper.getMainLooper())
+        contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.SHOW_MEDIA_SQUIGGLE_ANIMATION),
+            false,
+            object : ContentObserver(handler) {
+                override fun onChange(selfChange: Boolean) {
+                    val enableSquiggle = Settings.Secure.getIntForUser(context.contentResolver,
+                            Settings.Secure.SHOW_MEDIA_SQUIGGLE_ANIMATION, 1, UserHandle.USER_CURRENT) != 0
+                    _data = _data.copy(enableSquiggle = enableSquiggle)
+                }
+            }
+        )
     }
 
     /**
@@ -266,6 +295,7 @@ constructor(
                 seekAvailable = false,
                 playing = false,
                 scrubbing = false,
+                enableSquiggle = false,
                 elapsedTime = position,
                 duration = 100,
                 listening = false,
@@ -366,6 +396,16 @@ constructor(
         if (listener == enabledChangeListener) {
             enabledChangeListener = null
         }
+    }
+
+    /** returns a pair of whether seekbar is enabled and the duration of media. */
+    private fun getEnabledStateAndDuration(metadata: MediaMetadata?): Pair<Boolean, Int> {
+        val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.toInt() ?: 0
+        val enabled =
+            !(playbackState == null ||
+                playbackState?.state == PlaybackState.STATE_NONE ||
+                (duration <= 0))
+        return Pair(enabled, duration)
     }
 
     /**
@@ -562,6 +602,7 @@ constructor(
         /** whether playback state is not paused or connecting */
         val playing: Boolean,
         val scrubbing: Boolean,
+        val enableSquiggle: Boolean,
         val elapsedTime: Int?,
         val duration: Int,
         /** whether seekBar is listening to progress updates */

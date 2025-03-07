@@ -49,6 +49,7 @@ import com.android.systemui.dagger.qualifiers.Main;
 import com.android.systemui.emergency.EmergencyGesture;
 import com.android.systemui.emergency.EmergencyGestureModule.EmergencyGestureIntentFactory;
 import com.android.systemui.keyguard.WakefulnessLifecycle;
+import com.android.systemui.keyguard.domain.interactor.KeyguardInteractor;
 import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.QSPanelController;
@@ -60,6 +61,7 @@ import com.android.systemui.shade.CameraLauncher;
 import com.android.systemui.shade.QuickSettingsController;
 import com.android.systemui.shade.ShadeController;
 import com.android.systemui.shade.ShadeHeaderController;
+import com.android.systemui.shade.ShadeViewController;
 import com.android.systemui.shade.domain.interactor.PanelExpansionInteractor;
 import com.android.systemui.shade.domain.interactor.ShadeInteractor;
 import com.android.systemui.statusbar.CommandQueue;
@@ -69,6 +71,8 @@ import com.android.systemui.statusbar.policy.FlashlightController;
 import com.android.systemui.statusbar.policy.HeadsUpManager;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.statusbar.policy.RemoteInputQuickSettingsDisabler;
+import com.android.systemui.statusbar.policy.SecureLockscreenQSDisabler;
+import com.android.systemui.statusbar.policy.TaskHelper;
 
 import dagger.Lazy;
 
@@ -85,9 +89,11 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
     private final ScreenPinningRequest mScreenPinningRequest;
     private final com.android.systemui.shade.ShadeController mShadeController;
     private final CommandQueue mCommandQueue;
+    private final ShadeViewController mShadeViewController;
     private final PanelExpansionInteractor mPanelExpansionInteractor;
     private final Lazy<ShadeInteractor> mShadeInteractorLazy;
     private final ShadeHeaderController mShadeHeaderController;
+    private final FlashlightController mFlashlightController;
     private final RemoteInputQuickSettingsDisabler mRemoteInputQuickSettingsDisabler;
     private final MetricsLogger mMetricsLogger;
     private final KeyguardUpdateMonitor mKeyguardUpdateMonitor;
@@ -105,13 +111,13 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
     private final int mDisplayId;
     private final UserTracker mUserTracker;
     private final boolean mVibrateOnOpening;
-    private final VibrationEffect mCameraLaunchGestureVibrationEffect;
     private final ActivityStarter mActivityStarter;
     private final Lazy<CameraLauncher> mCameraLauncherLazy;
     private final QuickSettingsController mQsController;
     private final QSHost mQSHost;
-    private final FlashlightController mFlashlightController;
-
+    private final KeyguardInteractor mKeyguardInteractor;
+    private final SecureLockscreenQSDisabler mSecureLockscreenQSDisabler;
+    private final TaskHelper mTaskHelper;
     private static final VibrationAttributes HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES =
             VibrationAttributes.createForUsage(VibrationAttributes.USAGE_HARDWARE_FEEDBACK);
 
@@ -129,9 +135,11 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
             ScreenPinningRequest screenPinningRequest,
             ShadeController shadeController,
             CommandQueue commandQueue,
+            ShadeViewController shadeViewController,
             PanelExpansionInteractor panelExpansionInteractor,
             Lazy<ShadeInteractor> shadeInteractorLazy,
             ShadeHeaderController shadeHeaderController,
+            FlashlightController flashlightController,
             RemoteInputQuickSettingsDisabler remoteInputQuickSettingsDisabler,
             MetricsLogger metricsLogger,
             KeyguardUpdateMonitor keyguardUpdateMonitor,
@@ -151,17 +159,21 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
             UserTracker userTracker,
             QSHost qsHost,
             ActivityStarter activityStarter,
+            KeyguardInteractor keyguardInteractor,
             EmergencyGestureIntentFactory emergencyGestureIntentFactory,
-            FlashlightController flashlightController) {
+            SecureLockscreenQSDisabler secureLockscreenQSDisabler,
+            TaskHelper taskHelper) {
         mCentralSurfaces = centralSurfaces;
         mQsController = quickSettingsController;
         mContext = context;
         mScreenPinningRequest = screenPinningRequest;
         mShadeController = shadeController;
         mCommandQueue = commandQueue;
+        mShadeViewController = shadeViewController;
         mPanelExpansionInteractor = panelExpansionInteractor;
         mShadeInteractorLazy = shadeInteractorLazy;
         mShadeHeaderController = shadeHeaderController;
+        mFlashlightController = flashlightController;
         mRemoteInputQuickSettingsDisabler = remoteInputQuickSettingsDisabler;
         mMetricsLogger = metricsLogger;
         mKeyguardUpdateMonitor = keyguardUpdateMonitor;
@@ -180,11 +192,11 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
         mCameraLauncherLazy = cameraLauncherLazy;
         mUserTracker = userTracker;
         mQSHost = qsHost;
-        mFlashlightController = flashlightController;
+        mKeyguardInteractor = keyguardInteractor;
+        mSecureLockscreenQSDisabler = secureLockscreenQSDisabler;
+        mTaskHelper = taskHelper;
 
         mVibrateOnOpening = resources.getBoolean(R.bool.config_vibrateOnIconAnimation);
-        mCameraLaunchGestureVibrationEffect = getCameraGestureVibrationEffect(
-                mVibratorOptional, resources);
         mActivityStarter = activityStarter;
         mEmergencyGestureIntentFactory = emergencyGestureIntentFactory;
     }
@@ -273,6 +285,7 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
         mDisabled1 = state1;
 
         state2 = mRemoteInputQuickSettingsDisabler.adjustDisableFlags(state2);
+        state2 = mSecureLockscreenQSDisabler.adjustDisableFlags(state2);
         final int old2 = mDisabled2;
         final int diff2 = state2 ^ old2;
         mDisabled2 = state2;
@@ -356,6 +369,8 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
             }
             return;
         }
+        mKeyguardInteractor.onCameraLaunchDetected(source);
+
         if (!mCentralSurfaces.isDeviceInteractive()) {
             mPowerManager.wakeUp(SystemClock.uptimeMillis(), PowerManager.WAKE_REASON_CAMERA_LAUNCH,
                     "com.android.systemui:CAMERA_GESTURE");
@@ -390,6 +405,7 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
                 if (mStatusBarKeyguardViewManager.isBouncerShowing()) {
                     mStatusBarKeyguardViewManager.reset(true /* hide */);
                 }
+                mCentralSurfaces.startLaunchTransitionTimeout();
                 mCameraLauncherLazy.get().launchCamera(source,
                         mPanelExpansionInteractor.isFullyCollapsed());
                 mCentralSurfaces.updateScrimController();
@@ -521,6 +537,19 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
             mShadeController.animateExpandQs();
         }
     }
+    
+    @Override
+    public void setBlockedGesturalNavigation(boolean blocked) {
+        mCentralSurfaces.setBlockedGesturalNavigation(blocked);
+    }    
+
+    public void toggleSettingsPanel() {
+        if (mShadeViewController.isPanelExpanded()) {
+            mShadeController.animateCollapseShade();
+        } else {
+            animateExpandSettingsPanel(null);
+        }
+    }
 
     private boolean isGoingToSleep() {
         return mWakefulnessLifecycle.getWakefulness()
@@ -534,35 +563,7 @@ public class CentralSurfacesCommandQueueCallbacks implements CommandQueue.Callba
 
     private void vibrateForCameraGesture() {
         mVibratorOptional.ifPresent(
-                v -> v.vibrate(mCameraLaunchGestureVibrationEffect,
-                        HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES));
-    }
-
-    private static VibrationEffect getCameraGestureVibrationEffect(
-            Optional<Vibrator> vibratorOptional, Resources resources) {
-        if (vibratorOptional.isPresent() && vibratorOptional.get().areAllPrimitivesSupported(
-                VibrationEffect.Composition.PRIMITIVE_QUICK_RISE,
-                VibrationEffect.Composition.PRIMITIVE_CLICK)) {
-            return VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_RISE)
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1, 50)
-                    .compose();
-        }
-        if (vibratorOptional.isPresent() && vibratorOptional.get().hasAmplitudeControl()) {
-            // Make sure to pass -1 for repeat so VibratorManagerService doesn't stop us when going
-            // to sleep.
-            return VibrationEffect.createWaveform(
-                    CentralSurfaces.CAMERA_LAUNCH_GESTURE_VIBRATION_TIMINGS,
-                    CentralSurfaces.CAMERA_LAUNCH_GESTURE_VIBRATION_AMPLITUDES,
-                    /* repeat= */ -1);
-        }
-
-        int[] pattern = resources.getIntArray(R.array.config_cameraLaunchGestureVibePattern);
-        long[] timings = new long[pattern.length];
-        for (int i = 0; i < pattern.length; i++) {
-            timings[i] = pattern[i];
-        }
-        return VibrationEffect.createWaveform(timings, /* repeat= */ -1);
+                v -> v.vibrate(VibrationEffect.get(VibrationEffect.EFFECT_DOUBLE_CLICK)));
     }
 
     @VisibleForTesting

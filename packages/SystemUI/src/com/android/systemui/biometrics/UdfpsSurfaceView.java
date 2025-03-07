@@ -30,7 +30,7 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
-import com.android.systemui.res.R;
+import com.android.systemui.R;
 
 /**
  * Surface View for providing the Global High-Brightness Mode (GHBM) illumination for UDFPS.
@@ -41,21 +41,22 @@ public class UdfpsSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     /**
      * Notifies {@link UdfpsView} when to enable GHBM illumination.
      */
-    interface GhbmIlluminationListener {
+    public interface GhbmIlluminationListener {
         /**
          * @param surface the surface for which GHBM should be enabled.
-         * @param onDisplayConfigured a runnable that should be run after GHBM is enabled.
+         * @param onIlluminatedRunnable a runnable that should be run after GHBM is enabled.
          */
-        void enableGhbm(@NonNull Surface surface, @Nullable Runnable onDisplayConfigured);
+        void enableGhbm(@NonNull Surface surface, @Nullable Runnable onIlluminatedRunnable);
     }
 
     @NonNull private final SurfaceHolder mHolder;
     @NonNull private final Paint mSensorPaint;
 
     @Nullable private GhbmIlluminationListener mGhbmIlluminationListener;
-    @Nullable private Runnable mOnDisplayConfigured;
+    @Nullable private Runnable mOnIlluminatedRunnable;
     boolean mAwaitingSurfaceToStartIllumination;
     boolean mHasValidSurface;
+    private boolean mEnrolling = false;
 
     private Drawable mUdfpsIconPressed;
 
@@ -83,8 +84,8 @@ public class UdfpsSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     @Override public void surfaceCreated(SurfaceHolder holder) {
         mHasValidSurface = true;
         if (mAwaitingSurfaceToStartIllumination) {
-            doIlluminate(mOnDisplayConfigured);
-            mOnDisplayConfigured = null;
+            doIlluminate(mOnIlluminatedRunnable);
+            mOnIlluminatedRunnable = null;
             mAwaitingSurfaceToStartIllumination = false;
         }
     }
@@ -107,27 +108,27 @@ public class UdfpsSurfaceView extends SurfaceView implements SurfaceHolder.Callb
      * {@link UdfpsView} will hide this view, which would destroy the surface and remove the
      * illumination dot.
      */
-    public void startGhbmIllumination(@Nullable Runnable onDisplayConfigured) {
+    public void startGhbmIllumination(@Nullable Runnable onIlluminatedRunnable) {
         if (mGhbmIlluminationListener == null) {
             Log.e(TAG, "startIllumination | mGhbmIlluminationListener is null");
             return;
         }
 
         if (mHasValidSurface) {
-            doIlluminate(onDisplayConfigured);
+            doIlluminate(onIlluminatedRunnable);
         } else {
             mAwaitingSurfaceToStartIllumination = true;
-            mOnDisplayConfigured = onDisplayConfigured;
+            mOnIlluminatedRunnable = onIlluminatedRunnable;
         }
     }
 
-    private void doIlluminate(@Nullable Runnable onDisplayConfigured) {
+    private void doIlluminate(@Nullable Runnable onIlluminatedRunnable) {
         if (mGhbmIlluminationListener == null) {
             Log.e(TAG, "doIlluminate | mGhbmIlluminationListener is null");
             return;
         }
 
-        mGhbmIlluminationListener.enableGhbm(mHolder.getSurface(), onDisplayConfigured);
+        mGhbmIlluminationListener.enableGhbm(mHolder.getSurface(), onIlluminatedRunnable);
     }
 
     /**
@@ -141,6 +142,19 @@ public class UdfpsSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         Canvas canvas = null;
         try {
             canvas = mHolder.lockCanvas();
+            int addDotSize =
+                getResources().getDimensionPixelSize(R.dimen.udfps_enroll_dot_additional_size);
+            if (addDotSize > 0 && mEnrolling) {
+                float newRadius = ((sensorRect.right - sensorRect.left) / 2) + addDotSize;
+                float centerX = sensorRect.centerX();
+                float centerY = sensorRect.centerY();
+                sensorRect.set(
+                    centerX - newRadius,
+                    centerY - newRadius,
+                    centerX + newRadius,
+                    centerY + newRadius
+                );
+            }
             mUdfpsIconPressed.setBounds(
                     Math.round(sensorRect.left),
                     Math.round(sensorRect.top),
@@ -155,5 +169,9 @@ public class UdfpsSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 mHolder.unlockCanvasAndPost(canvas);
             }
         }
+    }
+
+    void setEnrolling(boolean enrolling) {
+        mEnrolling = enrolling;
     }
 }

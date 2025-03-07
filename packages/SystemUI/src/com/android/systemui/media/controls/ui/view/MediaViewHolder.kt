@@ -16,6 +16,7 @@
 
 package com.android.systemui.media.controls.ui.view
 
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -36,6 +37,9 @@ private const val TAG = "MediaViewHolder"
 /** Holder class for media player view */
 class MediaViewHolder constructor(itemView: View) {
     val player = itemView as TransitionLayout
+    
+    private lateinit var longPressText: TextView
+    private lateinit var marqueeText: TextView
 
     // Player information
     val albumView = itemView.requireViewById<ImageView>(R.id.album_art)
@@ -96,7 +100,13 @@ class MediaViewHolder constructor(itemView: View) {
     }
 
     fun marquee(start: Boolean, delay: Long) {
-        gutsViewHolder.marquee(start, delay, TAG)
+    	if (::longPressText.isInitialized && longPressText.handler != null) {
+    	    longPressText.handler.postDelayed({
+    	        marqueeText.isSelected = start
+    	    }, delay)
+    	} else {
+    	    Log.e(TAG, "Handler is null in longPressText or longPressText itself is null")
+    	}
     }
 
     companion object {

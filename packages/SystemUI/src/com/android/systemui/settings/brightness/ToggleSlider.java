@@ -17,13 +17,13 @@
 package com.android.systemui.settings.brightness;
 
 import android.view.MotionEvent;
+import android.widget.ImageView;
 
 import com.android.settingslib.RestrictedLockUtils;
 
 public interface ToggleSlider {
     interface Listener {
         void onChanged(boolean tracking, int value, boolean stopTracking);
-        void onCheckedChanged(boolean isChecked);
     }
 
     void setEnforcedAdmin(RestrictedLockUtils.EnforcedAdmin admin);
@@ -35,10 +35,10 @@ public interface ToggleSlider {
     int getMax();
     void setValue(int value);
     int getValue();
-    void setToggleValue(boolean value);
-    boolean getToggleValue();
 
     void showView();
     void hideView();
     boolean isVisible();
+
+    ImageView getIcon();
 }

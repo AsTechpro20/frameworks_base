@@ -37,6 +37,7 @@ import com.android.systemui.shared.R as sharedR
 import com.android.systemui.statusbar.lockscreen.LockscreenSmartspaceController
 import dagger.Lazy
 import javax.inject.Inject
+import kotlinx.coroutines.DisposableHandle
 
 @SysUISingleton
 open class SmartspaceSection
@@ -56,6 +57,7 @@ constructor(
 
     private var smartspaceVisibilityListener: OnGlobalLayoutListener? = null
     private var pastVisibility: Int = -1
+    private var disposableHandle: DisposableHandle? = null
 
     override fun onRebuildBegin() {
         smartspaceController.suppressDisconnects = true
@@ -69,12 +71,12 @@ constructor(
         if (!MigrateClocksToBlueprint.isEnabled) return
         if (!keyguardSmartspaceViewModel.isSmartspaceEnabled) return
         smartspaceView = smartspaceController.buildAndConnectView(constraintLayout)
-        weatherView = smartspaceController.buildAndConnectWeatherView(constraintLayout)
-        dateWeatherView =
-            smartspaceController.buildAndConnectDateView(constraintLayout) as ViewGroup
         pastVisibility = smartspaceView?.visibility ?: View.GONE
         constraintLayout.addView(smartspaceView)
         if (keyguardSmartspaceViewModel.isDateWeatherDecoupled) {
+            dateWeatherView =
+                smartspaceController.buildAndConnectDateView(constraintLayout) as ViewGroup
+            weatherView = smartspaceController.buildAndConnectWeatherView(constraintLayout)
             constraintLayout.addView(dateWeatherView)
             // Place weather right after the date, before the extras (alarm and dnd)
             val index = if (dateWeatherView?.childCount == 0) 0 else 1
@@ -96,12 +98,14 @@ constructor(
     override fun bindData(constraintLayout: ConstraintLayout) {
         if (!MigrateClocksToBlueprint.isEnabled) return
         if (!keyguardSmartspaceViewModel.isSmartspaceEnabled) return
-        KeyguardSmartspaceViewBinder.bind(
-            constraintLayout,
-            keyguardClockViewModel,
-            keyguardSmartspaceViewModel,
-            blueprintInteractor.get(),
-        )
+        disposableHandle?.dispose()
+        disposableHandle =
+            KeyguardSmartspaceViewBinder.bind(
+                constraintLayout,
+                keyguardClockViewModel,
+                keyguardSmartspaceViewModel,
+                blueprintInteractor.get(),
+            )
     }
 
     override fun applyConstraints(constraintSet: ConstraintSet) {
@@ -123,6 +127,7 @@ constructor(
 
             // migrate addSmartspaceView from KeyguardClockSwitchController
             constrainHeight(sharedR.id.bc_smartspace_view, ConstraintSet.WRAP_CONTENT)
+            constrainWidth(sharedR.id.bc_smartspace_view, ConstraintSet.MATCH_CONSTRAINT)
             connect(
                 sharedR.id.bc_smartspace_view,
                 ConstraintSet.START,
@@ -188,6 +193,8 @@ constructor(
         }
         smartspaceView?.viewTreeObserver?.removeOnGlobalLayoutListener(smartspaceVisibilityListener)
         smartspaceVisibilityListener = null
+
+        disposableHandle?.dispose()
     }
 
     private fun updateVisibility(constraintSet: ConstraintSet) {

@@ -75,15 +75,26 @@ object ActionIntentCreator {
      *   available.
      */
     fun createEdit(rawUri: Uri, context: Context): Intent {
+        return createEditOrView(rawUri, context, Intent(Intent.ACTION_EDIT))
+    }
+
+    /**
+     * @return an ACTION_VIEW intent for the given URI, directed to config_screenshotEditor if
+     *   available.
+     */
+    fun createView(rawUri: Uri, context: Context): Intent {
+        return createEditOrView(rawUri, context, Intent(Intent.ACTION_VIEW))
+    }
+
+    private fun createEditOrView(rawUri: Uri, context: Context, intent: Intent): Intent {
         val uri = uriWithoutUserId(rawUri)
-        val editIntent = Intent(Intent.ACTION_EDIT)
 
         val editor = context.getString(R.string.config_screenshotEditor)
         if (editor.isNotEmpty()) {
-            editIntent.component = ComponentName.unflattenFromString(editor)
+            intent.component = ComponentName.unflattenFromString(editor)
         }
 
-        return editIntent
+        return intent
             .setDataAndType(uri, "image/png")
             .putExtra(EXTRA_EDIT_SOURCE, EDIT_SOURCE_SCREENSHOT)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -95,7 +106,22 @@ object ActionIntentCreator {
     fun createDelete(rawUri: Uri, context: Context): PendingIntent {
         return PendingIntent.getBroadcast(context, rawUri.toString().hashCode(),
                 Intent(context, DeleteScreenshotReceiver::class.java)
-                        .putExtra(ScreenshotController.SCREENSHOT_URI_ID, rawUri.toString())
+                        .putExtra(LegacyScreenshotController.SCREENSHOT_URI_ID, rawUri.toString())
+                        .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+                        (PendingIntent.FLAG_CANCEL_CURRENT
+                        or PendingIntent.FLAG_ONE_SHOT
+                        or PendingIntent.FLAG_IMMUTABLE))
+    }
+
+    fun createLens(rawUri: Uri, context: Context, owner: UserHandle): PendingIntent {
+        return PendingIntent.getBroadcast(context, rawUri.toString().hashCode(),
+                Intent(context, LensScreenshotReceiver::class.java)
+                        .putExtra(
+                            LensScreenshotReceiver.EXTRA_LENS_SCREENSHOT_URI_ID,
+                            rawUri.toString())
+                        .putExtra(
+                            LensScreenshotReceiver.EXTRA_SCREENSHOT_USER_HANDLE,
+                            owner)
                         .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
                         (PendingIntent.FLAG_CANCEL_CURRENT
                         or PendingIntent.FLAG_ONE_SHOT

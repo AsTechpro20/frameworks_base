@@ -17,7 +17,6 @@
 package com.android.systemui.statusbar.phone;
 
 import android.graphics.Color;
-import android.os.Trace;
 
 import com.android.systemui.dock.DockManager;
 import com.android.systemui.res.R;
@@ -84,10 +83,10 @@ public enum ScrimState {
             mNotifTint = mClipQsScrim ? mBackgroundColor : Color.TRANSPARENT;
 
             mFrontAlpha = 0;
-            mBehindAlpha = mClipQsScrim ? 1 : mScrimBehindAlphaKeyguard;
+            mBehindAlpha = mClipQsScrim ? mCustomScrimAlpha : mScrimBehindAlphaKeyguard;
             mNotifAlpha = mClipQsScrim ? mScrimBehindAlphaKeyguard : 0;
             if (mClipQsScrim) {
-                updateScrimColor(mScrimBehind, 1f /* alpha */, mBackgroundColor);
+                updateScrimColor(mScrimBehind, mCustomScrimAlpha, mBackgroundColor);
             }
         }
     },
@@ -102,7 +101,7 @@ public enum ScrimState {
             mFrontAlpha = .66f;
 
             mBehindTint = mBackgroundColor;
-            mBehindAlpha = 1f;
+            mBehindAlpha = mCustomScrimAlpha;
         }
     },
 
@@ -112,8 +111,8 @@ public enum ScrimState {
             mNotifTint = previousState.mNotifTint;
             mNotifAlpha = previousState.mNotifAlpha;
 
-            mBehindTint = previousState.mBehindTint;
-            mBehindAlpha = previousState.mBehindAlpha;
+            mBehindTint = mBackgroundColor;
+            mBehindAlpha = mCustomScrimAlpha;
 
             mFrontTint = mBackgroundColor;
             mFrontAlpha = .66f;
@@ -127,7 +126,7 @@ public enum ScrimState {
         @Override
         public void prepare(ScrimState previousState) {
             mBehindAlpha = mClipQsScrim ? 1 : mDefaultScrimAlpha;
-            mBehindTint = mClipQsScrim ? mBackgroundColor : mSurfaceColor;
+            mBehindTint = mBackgroundColor;
             mNotifAlpha = mClipQsScrim ? mDefaultScrimAlpha : 0;
             mNotifTint = Color.TRANSPARENT;
             mFrontAlpha = 0f;
@@ -148,21 +147,25 @@ public enum ScrimState {
     BOUNCER_SCRIMMED {
         @Override
         public void prepare(ScrimState previousState) {
-            mBehindAlpha = 0;
-            mFrontAlpha = mDefaultScrimAlpha;
+            // Using previousState values makes SHADE_LOCKED -> BOUNCER_SCRIMMED smoother with no visual breakage
+            mBehindTint = previousState.mBehindTint;
+            mBehindAlpha = previousState.mBehindAlpha;
+            mFrontAlpha = 1f;
+            mNotifTint = previousState.mNotifTint;
+            mNotifAlpha = previousState.mNotifAlpha;
         }
     },
 
     SHADE_LOCKED {
         @Override
         public void prepare(ScrimState previousState) {
-            mBehindAlpha = mClipQsScrim ? 1 : mDefaultScrimAlpha;
-            mNotifAlpha = 1f;
+            mBehindAlpha = mClipQsScrim ? mCustomScrimAlpha : mDefaultScrimAlpha;
+            mNotifAlpha = mCustomScrimAlpha;
             mFrontAlpha = 0f;
-            mBehindTint = mClipQsScrim ? Color.TRANSPARENT : mBackgroundColor;
+            mBehindTint = Color.TRANSPARENT;
 
             if (mClipQsScrim) {
-                updateScrimColor(mScrimBehind, 1f /* alpha */, mBackgroundColor);
+                updateScrimColor(mScrimBehind, mCustomScrimAlpha, mBackgroundColor);
             }
         }
     },
@@ -251,7 +254,7 @@ public enum ScrimState {
         @Override
         public void prepare(ScrimState previousState) {
             // State that UI will sync to.
-            mBehindAlpha = mClipQsScrim ? 1 : 0;
+            mBehindAlpha = mClipQsScrim ? mCustomScrimAlpha : 0;
             mNotifAlpha = 0;
             mFrontAlpha = 0;
             mAnimationDuration = mKeyguardFadingAway
@@ -282,7 +285,7 @@ public enum ScrimState {
             }
 
             if (mClipQsScrim) {
-                updateScrimColor(mScrimBehind, 1f /* alpha */, mBackgroundColor);
+                updateScrimColor(mScrimBehind, mCustomScrimAlpha, mBackgroundColor);
             }
         }
     },
@@ -295,7 +298,7 @@ public enum ScrimState {
             mNotifTint = mClipQsScrim ? mBackgroundColor : Color.TRANSPARENT;
 
             mFrontAlpha = 0;
-            mBehindAlpha = mClipQsScrim ? 1 : 0;
+            mBehindAlpha = mClipQsScrim ? mCustomScrimAlpha : 0;
             mNotifAlpha = 0;
 
             mBlankScreen = false;
@@ -359,6 +362,7 @@ public enum ScrimState {
     float mFrontAlpha;
     float mBehindAlpha;
     float mNotifAlpha;
+    float mCustomScrimAlpha;
 
     float mScrimBehindAlphaKeyguard;
     float mDefaultScrimAlpha;
@@ -380,7 +384,7 @@ public enum ScrimState {
 
     public void init(ScrimView scrimInFront, ScrimView scrimBehind, DozeParameters dozeParameters,
             DockManager dockManager) {
-        mBackgroundColor = scrimBehind.getContext().getColor(R.color.shade_scrim_background_dark);
+        mBackgroundColor = scrimBehind.getContext().getColor(R.color.shade_scrim_background);
         mScrimInFront = scrimInFront;
         mScrimBehind = scrimBehind;
 
@@ -441,14 +445,6 @@ public enum ScrimState {
             tint = scrim == mScrimInFront ? ScrimController.DEBUG_FRONT_TINT
                     : ScrimController.DEBUG_BEHIND_TINT;
         }
-        Trace.traceCounter(Trace.TRACE_TAG_APP,
-                scrim == mScrimInFront ? "front_scrim_alpha" : "back_scrim_alpha",
-                (int) (alpha * 255));
-
-        Trace.traceCounter(Trace.TRACE_TAG_APP,
-                scrim == mScrimInFront ? "front_scrim_tint" : "back_scrim_tint",
-                Color.alpha(tint));
-
         scrim.setTint(tint);
         scrim.setViewAlpha(alpha);
     }
@@ -504,5 +500,9 @@ public enum ScrimState {
 
     public void setClipQsScrim(boolean clipsQsScrim) {
         mClipQsScrim = clipsQsScrim;
+    }
+
+    public void setCustomScrimAlpha(float customScrimAlpha) {
+        mCustomScrimAlpha = customScrimAlpha;
     }
 }

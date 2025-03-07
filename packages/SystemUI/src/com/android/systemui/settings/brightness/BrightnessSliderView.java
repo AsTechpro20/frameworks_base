@@ -17,16 +17,24 @@
 package com.android.systemui.settings.brightness;
 
 import android.content.Context;
+import android.content.ContentResolver;
+import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.DrawableWrapper;
 import android.graphics.drawable.LayerDrawable;
+import android.os.Handler;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.CompoundButton;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.SeekBar.OnSeekBarChangeListener;
+import android.widget.TextView;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
@@ -44,18 +52,12 @@ import java.util.Collections;
 public class BrightnessSliderView extends LinearLayout {
 
     @NonNull
+    private TextView mTextPersen;
     private ToggleSeekBar mSlider;
-    @Nullable
-    private ToggleIconView mToggle;
-    private CompoundButton.OnCheckedChangeListener mToggleListener;
     private DispatchTouchEventListener mListener;
     private Gefingerpoken mOnInterceptListener;
     @Nullable
     private Drawable mProgressDrawable;
-    @Nullable
-    private Drawable mProgressBgDrawable;
-    @Nullable
-    private Drawable mToggleBgDrawable;
     private float mScale = 1f;
     private final Rect mSystemGestureExclusionRect = new Rect();
 
@@ -76,11 +78,16 @@ public class BrightnessSliderView extends LinearLayout {
         mSlider = requireViewById(R.id.slider);
         mSlider.setAccessibilityLabel(getContentDescription().toString());
         setBoundaryOffset();
+        mTextPersen = requireViewById(R.id.percentbrightness);    
+	    Handler h = new Handler();
+        TextBrightness text = new TextBrightness(h);
+        text.BTObserver();
+	    ShowingTextBrightness();
+	    GetValueBrightness(mSlider.getProgress());
 
         // Finds the progress drawable. Assumes brightness_progress_drawable.xml
         try {
             LayerDrawable progress = (LayerDrawable) mSlider.getProgressDrawable();
-            mProgressBgDrawable = progress.findDrawableByLayerId(android.R.id.background);
             DrawableWrapper progressSlider = (DrawableWrapper) progress
                     .findDrawableByLayerId(android.R.id.progress);
             LayerDrawable actualProgressSlider = (LayerDrawable) progressSlider.getDrawable();
@@ -88,6 +95,47 @@ public class BrightnessSliderView extends LinearLayout {
         } catch (Exception e) {
             // Nothing to do, mProgressDrawable will be null.
         }
+    }
+    
+    public void GetValueBrightness(int value) {
+            int make100 = value * 100 / mSlider.getMax();
+            mTextPersen.setText(String.valueOf(make100) + "%");
+    }
+
+    private void ShowingTextBrightness() {
+            int showHide = Settings.System.getInt(getContext().getContentResolver(),"BRIGHTNESS_TEXTVIEW", 0);
+	    if (showHide == 1) {
+	    LinearLayout.LayoutParams bright = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT); 
+            bright.setMargins(20, 0, 0, 0);
+	    mTextPersen.setLayoutParams(bright);								 
+            mTextPersen.setVisibility(View.VISIBLE);
+            } else {
+            LinearLayout.LayoutParams bright = new LinearLayout.LayoutParams(0, 0); 
+            bright.setMargins(0, 0, 0, 0);
+	    mTextPersen.setLayoutParams(bright);	
+            mTextPersen.setVisibility(View.GONE);
+            }
+
+    }
+
+    public class TextBrightness extends ContentObserver {
+            public TextBrightness(Handler h) {
+            super(h);
+            BTObserver();
+            }
+
+            @Override
+            public void onChange(boolean selfChange) {
+                   super.onChange(selfChange);
+                   ShowingTextBrightness();
+            }
+
+            public void BTObserver()
+            {
+                   ContentResolver cr = getContext().getContentResolver();
+                   cr.registerContentObserver(Settings.System.getUriFor("BRIGHTNESS_TEXTVIEW"), false, this);  
+            }
     }
 
     private void setBoundaryOffset() {
@@ -99,15 +147,6 @@ public class BrightnessSliderView extends LinearLayout {
         lp.setMargins(-offset, -offset, -offset, -offset);
         setLayoutParams(lp);
         setPadding(offset,  offset, offset,  offset);
-    }
-
-    @Override
-    public void onViewAdded(View child) {
-        super.onViewAdded(child);
-        if (mToggle == null) {
-            mToggle = findViewById(R.id.toggle);
-            mToggleBgDrawable = mToggle != null ? mToggle.getBackground() : null;
-        }
     }
 
     /**
@@ -145,30 +184,12 @@ public class BrightnessSliderView extends LinearLayout {
     }
 
     /**
-     * Attaches a listener to the toggle
-     * @param checkedListener use {@code null} to remove listener
-     * @return whether the listener was set
-     */
-    public boolean setOnCheckedChangeListener(CompoundButton.OnCheckedChangeListener checkedListener) {
-        if (mToggle != null) {
-            mToggleListener = checkedListener;
-            mToggle.setOnCheckedChangeListener(checkedListener);
-            return true;
-        }
-        return false;
-    }
-
-    /**
      * Enforces admin rules for toggling auto-brightness and changing value of brightness
      * @param admin
      * @see ToggleSeekBar#setEnforcedAdmin
-     * @see ToggleIconView#setEnforcedAdmin
      */
     void setAdminBlocker(ToggleSeekBar.AdminBlocker blocker) {
         mSlider.setAdminBlocker(blocker);
-        if (mToggle != null) {
-            mToggle.setEnabled(blocker == null);
-        }
     }
 
     /**
@@ -207,29 +228,6 @@ public class BrightnessSliderView extends LinearLayout {
      */
     public int getValue() {
         return mSlider.getProgress();
-    }
-
-    /**
-     * Sets the current value of the toggle
-     * @param checked
-     */
-    public void setToggleValue(boolean checked) {
-        if (mToggle != null) {
-            // Avoid endless loops
-            mToggle.setOnCheckedChangeListener(null);
-            mToggle.setChecked(checked);
-            mToggle.setOnCheckedChangeListener(mToggleListener);
-        }
-    }
-
-    /**
-     * @return the current value of the toggle
-     */
-    public boolean getToggleValue() {
-        if (mToggle != null) {
-            return mToggle.isChecked();
-        }
-        return false;
     }
 
     public void setOnInterceptListener(Gefingerpoken onInterceptListener) {
@@ -276,16 +274,6 @@ public class BrightnessSliderView extends LinearLayout {
             int height = (int) (mProgressDrawable.getIntrinsicHeight() * mScale);
             int inset = (mProgressDrawable.getIntrinsicHeight() - height) / 2;
             mProgressDrawable.setBounds(r.left, inset, r.right, inset + height);
-            if (mProgressBgDrawable != null) {
-                final Rect rBackground = mProgressBgDrawable.getBounds();
-                mProgressBgDrawable.setBounds(rBackground.left, inset, rBackground.right,
-                        inset + height);
-            }
-            if (mToggleBgDrawable != null) {
-                final Rect rToggle = mToggleBgDrawable.getBounds();
-                // The slider & toggle share the same height
-                mToggleBgDrawable.setBounds(rToggle.left, inset, rToggle.right, inset + height);
-            }
         }
     }
 

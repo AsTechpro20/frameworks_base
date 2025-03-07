@@ -46,10 +46,10 @@ import com.android.systemui.keyguard.WakefulnessLifecycle
 import com.android.systemui.keyguard.domain.interactor.KeyguardInteractor
 import com.android.systemui.media.controls.domain.pipeline.MediaDataManager
 import com.android.systemui.media.controls.ui.view.MediaHost
-import com.android.systemui.media.controls.util.MediaFlags
 import com.android.systemui.media.dream.MediaDreamComplication
 import com.android.systemui.plugins.statusbar.StatusBarStateController
 import com.android.systemui.res.R
+import com.android.systemui.scene.shared.flag.SceneContainerFlag
 import com.android.systemui.shade.domain.interactor.ShadeInteractor
 import com.android.systemui.statusbar.CrossFadeHelper
 import com.android.systemui.statusbar.StatusBarState
@@ -64,6 +64,7 @@ import com.android.systemui.util.settings.SecureSettings
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -119,7 +120,6 @@ constructor(
     @Application private val coroutineScope: CoroutineScope,
     private val splitShadeStateController: SplitShadeStateController,
     private val logger: MediaViewLogger,
-    private val mediaFlags: MediaFlags,
 ) {
 
     /** Track the media player setting status on lock screen. */
@@ -361,6 +361,13 @@ constructor(
     }
 
     /**
+     * Returns whether the user decided to show the media player on lockscreen
+     */
+    fun getShouldShowOnLockScreen(): Boolean {
+        return allowMediaPlayerOnLockScreen
+    }
+
+    /**
      * Is the shade currently collapsing from the expanded qs? If we're on the lockscreen and in qs,
      * we wouldn't want to transition in that case.
      */
@@ -431,6 +438,12 @@ constructor(
 
     /** Is the communal UI showing */
     private var isCommunalShowing: Boolean = false
+
+    /** Is the primary bouncer showing */
+    private var isPrimaryBouncerShowing: Boolean = false
+
+    /** Is either shade or QS fully expanded */
+    private var isAnyShadeFullyExpanded: Boolean = false
 
     /** Is the communal UI showing and not dreaming */
     private var onCommunalNotDreaming: Boolean = false
@@ -588,6 +601,20 @@ constructor(
             }
         }
 
+        coroutineScope.launch {
+            shadeInteractor.isAnyFullyExpanded.collect {
+                isAnyShadeFullyExpanded = it
+                updateUserVisibility()
+            }
+        }
+
+        coroutineScope.launch {
+            keyguardInteractor.primaryBouncerShowing.collect {
+                isPrimaryBouncerShowing = it
+                updateUserVisibility()
+            }
+        }
+
         if (mediaControlsLockscreenShadeBugFix()) {
             coroutineScope.launch {
                 shadeInteractor.shadeExpansion.collect { expansion ->
@@ -639,6 +666,7 @@ constructor(
                         communalShowing && isDreaming && isShadeExpanding
                     onCommunalNotDreaming = communalShowing && !isDreaming
                     updateDesiredLocation(forceNoAnimation = true)
+                    updateUserVisibility()
                 }
         }
     }
@@ -649,6 +677,12 @@ constructor(
                 R.dimen.lockscreen_shade_media_transition_distance
             )
         inSplitShade = splitShadeStateController.shouldUseSplitNotificationShade(context.resources)
+        allowMediaPlayerOnLockScreen =
+            secureSettings.getBoolForUser(
+                Settings.Secure.MEDIA_CONTROLS_LOCK_SCREEN,
+                true,
+                UserHandle.USER_CURRENT
+            )
     }
 
     /**
@@ -1111,7 +1145,7 @@ constructor(
 
     private fun updateHostAttachment() =
         traceSection("MediaHierarchyManager#updateHostAttachment") {
-            if (mediaFlags.isSceneContainerEnabled()) {
+            if (SceneContainerFlag.isEnabled) {
                 // No need to manage transition states - just update the desired location directly
                 logger.logMediaHostAttachment(desiredLocation)
                 mediaCarouselController.onDesiredLocationChanged(
@@ -1210,7 +1244,6 @@ constructor(
             (onCommunalNotDreaming && qsExpansion == 0.0f) || onCommunalDreamingAndShadeExpanding
         val location =
             when {
-                mediaFlags.isSceneContainerEnabled() -> desiredLocation
                 dreamOverlayActive && dreamMediaComplicationActive -> LOCATION_DREAM_OVERLAY
                 onCommunal -> LOCATION_COMMUNAL_HUB
                 (qsExpansion > 0.0f || inSplitShade) && !onLockscreen -> LOCATION_QS
@@ -1292,7 +1325,8 @@ constructor(
         val shadeVisible =
             isLockScreenVisibleToUser() ||
                 isLockScreenShadeVisibleToUser() ||
-                isHomeScreenShadeVisibleToUser()
+                isHomeScreenShadeVisibleToUser() ||
+                isGlanceableHubVisibleToUser()
         val mediaVisible = qsExpanded || hasActiveMediaOrRecommendation
         mediaCarouselController.mediaCarouselScrollHandler.visibleToUser =
             shadeVisible && mediaVisible
@@ -1318,6 +1352,10 @@ constructor(
         return !statusBarStateController.isDozing &&
             statusBarStateController.state == StatusBarState.SHADE &&
             statusBarStateController.isExpanded
+    }
+
+    private fun isGlanceableHubVisibleToUser(): Boolean {
+        return isCommunalShowing && !isPrimaryBouncerShowing && !isAnyShadeFullyExpanded
     }
 
     companion object {

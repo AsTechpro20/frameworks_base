@@ -42,13 +42,18 @@ import com.android.systemui.keyguard.ui.view.DeviceEntryIconView
 import com.android.systemui.keyguard.ui.viewmodel.DeviceEntryBackgroundViewModel
 import com.android.systemui.keyguard.ui.viewmodel.DeviceEntryForegroundViewModel
 import com.android.systemui.keyguard.ui.viewmodel.DeviceEntryIconViewModel
+import com.android.systemui.log.LogBuffer
+import com.android.systemui.log.LongPressHandlingViewLogger
+import com.android.systemui.log.dagger.LongPressTouchLog
 import com.android.systemui.plugins.FalsingManager
 import com.android.systemui.res.R
 import com.android.systemui.shade.NotificationPanelView
 import com.android.systemui.statusbar.VibratorHelper
+import com.android.systemui.tuner.TunerService
 import dagger.Lazy
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 /** Includes the device entry icon. */
@@ -68,8 +73,11 @@ constructor(
     private val deviceEntryBackgroundViewModel: Lazy<DeviceEntryBackgroundViewModel>,
     private val falsingManager: Lazy<FalsingManager>,
     private val vibratorHelper: Lazy<VibratorHelper>,
+    @LongPressTouchLog private val logBuffer: LogBuffer,
+    private val tunerService: TunerService,
 ) : KeyguardSection() {
     private val deviceEntryIconViewId = R.id.device_entry_icon_view
+    private var disposableHandle: DisposableHandle? = null
 
     override fun addViews(constraintLayout: ConstraintLayout) {
         if (
@@ -86,7 +94,17 @@ constructor(
 
         val view =
             if (DeviceEntryUdfpsRefactor.isEnabled) {
-                DeviceEntryIconView(context, null).apply { id = deviceEntryIconViewId }
+                DeviceEntryIconView(
+                        context,
+                        null,
+                        0,
+                        LongPressHandlingViewLogger(
+                            logBuffer = logBuffer,
+                            TAG
+                        ),
+                        tunerService
+                    )
+                    .apply { id = deviceEntryIconViewId }
             } else {
                 // KeyguardBottomAreaRefactor.isEnabled or MigrateClocksToBlueprint.isEnabled
                 LockIconView(context, null).apply { id = R.id.lock_icon_view }
@@ -97,15 +115,17 @@ constructor(
     override fun bindData(constraintLayout: ConstraintLayout) {
         if (DeviceEntryUdfpsRefactor.isEnabled) {
             constraintLayout.findViewById<DeviceEntryIconView?>(deviceEntryIconViewId)?.let {
-                DeviceEntryIconViewBinder.bind(
-                    applicationScope,
-                    it,
-                    deviceEntryIconViewModel.get(),
-                    deviceEntryForegroundViewModel.get(),
-                    deviceEntryBackgroundViewModel.get(),
-                    falsingManager.get(),
-                    vibratorHelper.get(),
-                )
+                disposableHandle?.dispose()
+                disposableHandle =
+                    DeviceEntryIconViewBinder.bind(
+                        applicationScope,
+                        it,
+                        deviceEntryIconViewModel.get(),
+                        deviceEntryForegroundViewModel.get(),
+                        deviceEntryBackgroundViewModel.get(),
+                        falsingManager.get(),
+                        vibratorHelper.get(),
+                    )
             }
         } else {
             constraintLayout.findViewById<LockIconView?>(R.id.lock_icon_view)?.let {
@@ -178,6 +198,7 @@ constructor(
     override fun removeViews(constraintLayout: ConstraintLayout) {
         if (DeviceEntryUdfpsRefactor.isEnabled) {
             constraintLayout.removeView(deviceEntryIconViewId)
+            disposableHandle?.dispose()
         } else {
             constraintLayout.removeView(R.id.lock_icon_view)
         }
@@ -252,5 +273,9 @@ constructor(
                 }
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "DefaultDeviceEntrySection"
     }
 }

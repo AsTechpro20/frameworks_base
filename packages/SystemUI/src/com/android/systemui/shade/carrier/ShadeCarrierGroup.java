@@ -18,12 +18,14 @@ package com.android.systemui.shade.carrier;
 
 import android.annotation.StyleRes;
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.graphics.PorterDuff;
 import android.util.AttributeSet;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import com.android.systemui.FontSizeUtils;
 import com.android.systemui.res.R;
 
 /**
@@ -58,8 +60,19 @@ public class ShadeCarrierGroup extends LinearLayout {
         return findViewById(R.id.shade_carrier_divider2);
     }
 
+    public void updateColors(int color, ColorStateList colorStateList) {
+        getNoSimTextView().setTextColor(color);
+        ShadeCarrier[] shadeCarriers = { getCarrier1View(), getCarrier2View(), getCarrier3View() };
+        for (ShadeCarrier shadeCarrier : shadeCarriers) {
+            for (int i = 0; i < shadeCarrier.getChildCount(); i++) {
+                shadeCarrier.updateColors(colorStateList);
+                shadeCarrier.setCarrierTextColor(color);
+            }
+        }
+    }
+
     public void updateTextAppearance(@StyleRes int resId) {
-        FontSizeUtils.updateFontSizeFromStyle(getNoSimTextView(), resId);
+        getNoSimTextView().setTextAppearance(resId);
         getCarrier1View().updateTextAppearance(resId);
         getCarrier2View().updateTextAppearance(resId);
         getCarrier3View().updateTextAppearance(resId);

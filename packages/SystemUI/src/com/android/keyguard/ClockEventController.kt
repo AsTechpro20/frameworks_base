@@ -21,6 +21,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Resources
 import android.os.Trace
+import android.database.ContentObserver
+import android.provider.Settings.System
 import android.text.format.DateFormat
 import android.util.Log
 import android.util.TypedValue
@@ -417,6 +419,13 @@ constructor(
             }
         }
 
+    private val settingsListener = object : ContentObserver(null) {
+        override fun onChange(selfChange: Boolean) {
+            clock?.events?.onColorPaletteChanged(resources)
+            updateColors()
+        }
+    }
+
     fun registerListeners(parent: View) {
         if (isRegistered) {
             return
@@ -452,6 +461,13 @@ constructor(
             zenModeCallback.onZenChanged(zenModeController.zen)
             zenModeCallback.onNextAlarmChanged()
         }
+
+        settingsListener.onChange(true)
+        context.getContentResolver().registerContentObserver(
+            System.getUriFor(System.LOCKSCREEN_CLOCK_COLORED),
+            false, /* notifyForDescendants */
+            settingsListener
+        )
     }
 
     fun unregisterListeners() {
@@ -475,6 +491,13 @@ constructor(
             largeClock.view.removeOnAttachStateChangeListener(largeClockOnAttachStateChangeListener)
         }
         smallClockFrame?.viewTreeObserver?.removeOnGlobalLayoutListener(onGlobalLayoutListener)
+        context.getContentResolver().unregisterContentObserver(settingsListener)
+    }
+
+    fun setFallbackWeatherData(data: WeatherData) {
+        if (weatherData != null) return
+        weatherData = data
+        clock?.run { events.onWeatherDataChanged(data) }
     }
 
     /**

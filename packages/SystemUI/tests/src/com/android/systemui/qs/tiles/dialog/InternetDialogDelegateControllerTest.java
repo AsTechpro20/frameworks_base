@@ -1,9 +1,3 @@
-/**
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.systemui.qs.tiles.dialog;
 
 import static android.net.wifi.sharedconnectivity.app.NetworkProviderInfo.DEVICE_TYPE_PHONE;
@@ -35,6 +29,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,6 +62,7 @@ import android.view.WindowManager;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
 
+import com.android.app.viewcapture.ViewCaptureAwareWindowManager;
 import com.android.internal.logging.UiEventLogger;
 import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.settingslib.wifi.WifiUtils;
@@ -84,7 +80,6 @@ import com.android.systemui.statusbar.policy.LocationController;
 import com.android.systemui.toast.SystemUIToast;
 import com.android.systemui.toast.ToastFactory;
 import com.android.systemui.util.CarrierConfigTracker;
-import com.android.systemui.util.CarrierNameCustomization;
 import com.android.systemui.util.concurrency.FakeExecutor;
 import com.android.systemui.util.settings.GlobalSettings;
 import com.android.systemui.util.time.FakeSystemClock;
@@ -167,7 +162,7 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
     @Mock
     InternetDialogController.InternetDialogCallback mInternetDialogCallback;
     @Mock
-    private WindowManager mWindowManager;
+    private ViewCaptureAwareWindowManager mWindowManager;
     @Mock
     private ToastFactory mToastFactory;
     @Mock
@@ -190,8 +185,6 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
     private SignalStrength mSignalStrength;
     @Mock
     private WifiConfiguration mWifiConfiguration;
-    @Mock
-    private CarrierNameCustomization mCarrierNameCustomization;
 
     private FakeFeatureFlags mFlags = new FakeFeatureFlags();
 
@@ -241,9 +234,9 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
                 mSubscriptionManager, mTelephonyManager, mWifiManager,
                 mConnectivityManager, mHandler, mExecutor, mBroadcastDispatcher,
                 mock(KeyguardUpdateMonitor.class), mGlobalSettings, mKeyguardStateController,
-                mWindowManager, mToastFactory, mWorkerHandler, mCarrierConfigTracker,
-                mLocationController, mDialogTransitionAnimator, mWifiStateWorker, mFlags,
-                mCarrierNameCustomization);
+                mWindowManager, mToastFactory, mWorkerHandler,
+                mCarrierConfigTracker, mLocationController, mDialogTransitionAnimator,
+                mWifiStateWorker, mFlags);
         mSubscriptionManager.addOnSubscriptionsChangedListener(mExecutor,
                 mInternetDialogController.mOnSubscriptionsChangedListener);
         mInternetDialogController.onStart(mInternetDialogCallback, true);
@@ -895,6 +888,34 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
     }
 
     @Test
+    public void getActiveAutoSwitchNonDdsSubId_registerCallbackForExistedSubId_notRegister() {
+        mFlags.set(Flags.QS_SECONDARY_DATA_SUB_INFO, true);
+
+        // Adds non DDS subId
+        SubscriptionInfo info = mock(SubscriptionInfo.class);
+        doReturn(SUB_ID2).when(info).getSubscriptionId();
+        doReturn(false).when(info).isOpportunistic();
+        when(mSubscriptionManager.getActiveSubscriptionInfo(anyInt())).thenReturn(info);
+
+        mInternetDialogController.getActiveAutoSwitchNonDdsSubId();
+
+        // 1st time is onStart(), 2nd time is getActiveAutoSwitchNonDdsSubId()
+        verify(mTelephonyManager, times(2)).registerTelephonyCallback(any(), any());
+        assertThat(mInternetDialogController.mSubIdTelephonyCallbackMap.size() == 2);
+
+        // Adds non DDS subId again
+        doReturn(SUB_ID2).when(info).getSubscriptionId();
+        doReturn(false).when(info).isOpportunistic();
+        when(mSubscriptionManager.getActiveSubscriptionInfo(anyInt())).thenReturn(info);
+
+        mInternetDialogController.getActiveAutoSwitchNonDdsSubId();
+
+        // Does not add due to cached subInfo in mSubIdTelephonyCallbackMap.
+        verify(mTelephonyManager, times(2)).registerTelephonyCallback(any(), any());
+        assertThat(mInternetDialogController.mSubIdTelephonyCallbackMap.size() == 2);
+    }
+
+    @Test
     public void getMobileNetworkSummary() {
         mFlags.set(Flags.QS_SECONDARY_DATA_SUB_INFO, true);
         Resources res1 = mock(Resources.class);
@@ -916,7 +937,7 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
         mSubIdTelephonyDisplayInfoMap.put(SUB_ID2, info2);
 
         doReturn(SUB_ID2).when(spyController).getActiveAutoSwitchNonDdsSubId();
-        doReturn(true).when(spyController).isMobileDataEnabled(SUB_ID);
+        doReturn(true).when(spyController).isMobileDataEnabled();
         doReturn(true).when(spyController).activeNetworkIsCellular();
         String dds = spyController.getMobileNetworkSummary(SUB_ID);
         String nonDds = spyController.getMobileNetworkSummary(SUB_ID2);
@@ -930,7 +951,7 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
     @Test
     public void getMobileNetworkSummary_flagOff() {
         InternetDialogController spyController = spy(mInternetDialogController);
-        doReturn(true).when(spyController).isMobileDataEnabled(SUB_ID);
+        doReturn(true).when(spyController).isMobileDataEnabled();
         doReturn(true).when(spyController).activeNetworkIsCellular();
         String dds = spyController.getMobileNetworkSummary(SUB_ID);
 
@@ -1032,7 +1053,7 @@ public class InternetDialogDelegateControllerTest extends SysuiTestCase {
                 TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE);
 
         mSubIdTelephonyDisplayInfoMap.put(SUB_ID, info);
-        doReturn(true).when(spyController).isMobileDataEnabled(SUB_ID);
+        doReturn(true).when(spyController).isMobileDataEnabled();
         doReturn(true).when(spyController).activeNetworkIsCellular();
         spyController.mCarrierNetworkChangeMode = true;
         String dds = spyController.getMobileNetworkSummary(SUB_ID);

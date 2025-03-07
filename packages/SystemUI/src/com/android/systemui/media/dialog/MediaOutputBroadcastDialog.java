@@ -52,8 +52,6 @@ import com.android.systemui.statusbar.phone.SystemUIDialog;
 
 import com.google.zxing.WriterException;
 
-import java.nio.charset.StandardCharsets;
-
 /**
  * Dialog for media output broadcast.
  */
@@ -106,11 +104,10 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
             if (mAlertDialog == null || mBroadcastErrorMessage == null) {
                 return;
             }
-            byte[] code = s.toString().getBytes(StandardCharsets.UTF_8);
             boolean breakBroadcastCodeRuleTextLengthLessThanMin =
-                    code.length > 0 && code.length < BROADCAST_CODE_MIN_LENGTH;
+                    s.length() > 0 && s.length() < BROADCAST_CODE_MIN_LENGTH;
             boolean breakBroadcastCodeRuleTextLengthMoreThanMax =
-                    code.length > BROADCAST_CODE_MAX_LENGTH;
+                    s.length() > BROADCAST_CODE_MAX_LENGTH;
             boolean breakRule = breakBroadcastCodeRuleTextLengthLessThanMin
                     || breakBroadcastCodeRuleTextLengthMoreThanMax;
 
@@ -148,10 +145,9 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
             if (mAlertDialog == null || mBroadcastErrorMessage == null) {
                 return;
             }
-            byte[] name = s.toString().getBytes(StandardCharsets.UTF_8);
             boolean breakBroadcastNameRuleTextLengthMoreThanMax =
-                    name.length > BROADCAST_NAME_MAX_LENGTH;
-            boolean breakRule = breakBroadcastNameRuleTextLengthMoreThanMax || (name.length == 0);
+                    s.length() > BROADCAST_NAME_MAX_LENGTH;
+            boolean breakRule = breakBroadcastNameRuleTextLengthMoreThanMax || (s.length() == 0);
 
             if (breakBroadcastNameRuleTextLengthMoreThanMax) {
                 mBroadcastErrorMessage.setText(
@@ -239,14 +235,17 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
                 }
             };
 
-    MediaOutputBroadcastDialog(Context context, boolean aboveStatusbar,
-            BroadcastSender broadcastSender, MediaOutputController mediaOutputController) {
+    MediaOutputBroadcastDialog(
+            Context context,
+            boolean aboveStatusbar,
+            BroadcastSender broadcastSender,
+            MediaSwitchingController mediaSwitchingController) {
         super(
                 context,
                 broadcastSender,
-                mediaOutputController, /* includePlaybackAndAppMetadata */
+                mediaSwitchingController, /* includePlaybackAndAppMetadata */
                 true);
-        mAdapter = new MediaOutputAdapter(mMediaOutputController);
+        mAdapter = new MediaOutputAdapter(mMediaSwitchingController);
         // TODO(b/226710953): Move the part to MediaOutputBaseDialog for every class
         //  that extends MediaOutputBaseDialog
         if (!aboveStatusbar) {
@@ -264,11 +263,10 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
     @Override
     public void start() {
         super.start();
-        refreshUi();
         if (!mIsLeBroadcastAssistantCallbackRegistered) {
             mIsLeBroadcastAssistantCallbackRegistered = true;
-            mMediaOutputController.registerLeBroadcastAssistantServiceCallback(mExecutor,
-                    mBroadcastAssistantCallback);
+            mMediaSwitchingController.registerLeBroadcastAssistantServiceCallback(
+                    mExecutor, mBroadcastAssistantCallback);
         }
         /* Add local source broadcast to connected capable devices that may be possible receivers
          * of stream.
@@ -281,7 +279,7 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
         super.stop();
         if (mIsLeBroadcastAssistantCallbackRegistered) {
             mIsLeBroadcastAssistantCallbackRegistered = false;
-            mMediaOutputController.unregisterLeBroadcastAssistantServiceCallback(
+            mMediaSwitchingController.unregisterLeBroadcastAssistantServiceCallback(
                     mBroadcastAssistantCallback);
         }
     }
@@ -293,7 +291,7 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
 
     @Override
     IconCompat getHeaderIcon() {
-        return mMediaOutputController.getHeaderIcon();
+        return mMediaSwitchingController.getHeaderIcon();
     }
 
     @Override
@@ -304,17 +302,17 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
 
     @Override
     CharSequence getHeaderText() {
-        return mMediaOutputController.getHeaderTitle();
+        return mMediaSwitchingController.getHeaderTitle();
     }
 
     @Override
     CharSequence getHeaderSubtitle() {
-        return mMediaOutputController.getHeaderSubTitle();
+        return mMediaSwitchingController.getHeaderSubTitle();
     }
 
     @Override
     IconCompat getAppSourceIcon() {
-        return mMediaOutputController.getNotificationSmallIcon();
+        return mMediaSwitchingController.getNotificationSmallIcon();
     }
 
     @Override
@@ -324,16 +322,16 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
 
     @Override
     public void onStopButtonClick() {
-        mMediaOutputController.stopBluetoothLeBroadcast();
+        mMediaSwitchingController.stopBluetoothLeBroadcast();
         dismiss();
     }
 
     private String getBroadcastMetadataInfo(int metadata) {
         switch (metadata) {
             case METADATA_BROADCAST_NAME:
-                return mMediaOutputController.getBroadcastName();
+                return mMediaSwitchingController.getBroadcastName();
             case METADATA_BROADCAST_CODE:
-                return mMediaOutputController.getBroadcastCode();
+                return mMediaSwitchingController.getBroadcastCode();
             default:
                 return "";
         }
@@ -347,13 +345,15 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
         mBroadcastQrCodeView = getDialogView().requireViewById(R.id.qrcode_view);
 
         mBroadcastNotify = getDialogView().requireViewById(R.id.broadcast_info);
-        mBroadcastNotify.setOnClickListener(v -> {
-            mMediaOutputController.launchLeBroadcastNotifyDialog(
-                    /* view= */ null,
-                    /* broadcastSender= */ null,
-                    MediaOutputController.BroadcastNotifyDialog.ACTION_BROADCAST_INFO_ICON,
-                    /* onClickListener= */ null);
-        });
+        mBroadcastNotify.setOnClickListener(
+                v -> {
+                    mMediaSwitchingController.launchLeBroadcastNotifyDialog(
+                            /* mediaOutputDialog= */ null,
+                            /* broadcastSender= */ null,
+                            MediaSwitchingController.BroadcastNotifyDialog
+                                    .ACTION_BROADCAST_INFO_ICON,
+                            /* listener= */ null);
+                });
         mBroadcastName = getDialogView().requireViewById(R.id.broadcast_name_summary);
         mBroadcastNameEdit = getDialogView().requireViewById(R.id.broadcast_name_edit);
         mBroadcastNameEdit.setOnClickListener(v -> {
@@ -414,16 +414,16 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
             return;
         }
 
-        for (BluetoothDevice sink : mMediaOutputController.getConnectedBroadcastSinkDevices()) {
+        for (BluetoothDevice sink : mMediaSwitchingController.getConnectedBroadcastSinkDevices()) {
             Log.d(TAG, "The broadcastMetadata broadcastId: " + broadcastMetadata.getBroadcastId()
                     + ", the device: " + sink.getAnonymizedAddress());
 
-            if (mMediaOutputController.isReceiverReceivingBroadcast(sink)) {
-                Log.d(TAG, "The sink device is receiving broadcast streaming");
-                continue;
+            if (mMediaSwitchingController.isThereAnyBroadcastSourceIntoSinkDevice(sink)) {
+                Log.d(TAG, "The sink device has the broadcast source now.");
+                return;
             }
-            if (!mMediaOutputController.addSourceIntoSinkDeviceWithBluetoothLeAssistant(sink,
-                    broadcastMetadata, /*isGroupOp=*/ false)) {
+            if (!mMediaSwitchingController.addSourceIntoSinkDeviceWithBluetoothLeAssistant(
+                    sink, broadcastMetadata, /* isGroupOp= */ false)) {
                 Log.e(TAG, "Error: Source add failed");
             }
         }
@@ -462,11 +462,11 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
     }
 
     private String getLocalBroadcastMetadataQrCodeString() {
-        return mMediaOutputController.getLocalBroadcastMetadataQrCodeString();
+        return mMediaSwitchingController.getLocalBroadcastMetadataQrCodeString();
     }
 
     private BluetoothLeBroadcastMetadata getBroadcastMetadata() {
-        return mMediaOutputController.getBroadcastMetadata();
+        return mMediaSwitchingController.getBroadcastMetadata();
     }
 
     @VisibleForTesting
@@ -481,8 +481,8 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
              * stopped then used the new Broadcast code to start the Broadcast.
              */
             mIsStopbyUpdateBroadcastCode = true;
-            mMediaOutputController.setBroadcastCode(updatedString);
-            if (!mMediaOutputController.stopBluetoothLeBroadcast()) {
+            mMediaSwitchingController.setBroadcastCode(updatedString);
+            if (!mMediaSwitchingController.stopBluetoothLeBroadcast()) {
                 handleLeBroadcastStopFailed();
                 return;
             }
@@ -490,8 +490,8 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
             /* If the user wants to update the Broadcast Name, we don't need to stop the Broadcast
              * session. Only use the new Broadcast name to update the broadcast session.
              */
-            mMediaOutputController.setBroadcastName(updatedString);
-            if (!mMediaOutputController.updateBluetoothLeBroadcast()) {
+            mMediaSwitchingController.setBroadcastName(updatedString);
+            if (!mMediaSwitchingController.updateBluetoothLeBroadcast()) {
                 handleLeBroadcastUpdateFailed();
             }
         }
@@ -500,7 +500,14 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
     @Override
     public boolean isBroadcastSupported() {
         if (!legacyLeAudioSharing()) return false;
-        return mMediaOutputController.isBroadcastSupported();
+        boolean isBluetoothLeDevice = false;
+        if (mMediaSwitchingController.getCurrentConnectedMediaDevice() != null) {
+            isBluetoothLeDevice =
+                    mMediaSwitchingController.isBluetoothLeDevice(
+                            mMediaSwitchingController.getCurrentConnectedMediaDevice());
+        }
+
+        return mMediaSwitchingController.isBroadcastSupported() && isBluetoothLeDevice;
     }
 
     @Override
@@ -514,7 +521,7 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
 
     @Override
     public void handleLeBroadcastStartFailed() {
-        mMediaOutputController.setBroadcastCode(mCurrentBroadcastCode);
+        mMediaSwitchingController.setBroadcastCode(mCurrentBroadcastCode);
         mRetryCount++;
 
         handleUpdateFailedUi();
@@ -524,7 +531,6 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
     public void handleLeBroadcastMetadataChanged() {
         Log.d(TAG, "handleLeBroadcastMetadataChanged:");
         refreshUi();
-        startBroadcastWithConnectedDevices();
     }
 
     @Override
@@ -538,8 +544,8 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
 
     @Override
     public void handleLeBroadcastUpdateFailed() {
-        //Change the value in shared preferences back to it original value
-        mMediaOutputController.setBroadcastName(mCurrentBroadcastName);
+        // Change the value in shared preferences back to it original value
+        mMediaSwitchingController.setBroadcastName(mCurrentBroadcastName);
         mRetryCount++;
 
         handleUpdateFailedUi();
@@ -550,7 +556,7 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
         if (mIsStopbyUpdateBroadcastCode) {
             mIsStopbyUpdateBroadcastCode = false;
             mRetryCount = 0;
-            if (!mMediaOutputController.startBluetoothLeBroadcast()) {
+            if (!mMediaSwitchingController.startBluetoothLeBroadcast()) {
                 handleLeBroadcastStartFailed();
                 return;
             }
@@ -561,8 +567,8 @@ public class MediaOutputBroadcastDialog extends MediaOutputBaseDialog {
 
     @Override
     public void handleLeBroadcastStopFailed() {
-        //Change the value in shared preferences back to it original value
-        mMediaOutputController.setBroadcastCode(mCurrentBroadcastCode);
+        // Change the value in shared preferences back to it original value
+        mMediaSwitchingController.setBroadcastCode(mCurrentBroadcastCode);
         mRetryCount++;
 
         handleUpdateFailedUi();

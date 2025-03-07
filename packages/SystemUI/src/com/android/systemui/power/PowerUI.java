@@ -16,6 +16,8 @@
 
 package com.android.systemui.power;
 
+import static com.android.systemui.util.ConvenienceExtensionsKt.toKotlinLazy;
+
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -44,6 +46,7 @@ import android.util.Slog;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.android.app.viewcapture.ViewCapture;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.settingslib.fuelgauge.Estimate;
 import com.android.settingslib.utils.ThreadUtils;
@@ -55,6 +58,8 @@ import com.android.systemui.res.R;
 import com.android.systemui.settings.UserTracker;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.policy.ConfigurationController;
+
+import kotlin.Lazy;
 
 import java.io.PrintWriter;
 import java.util.Arrays;
@@ -69,7 +74,7 @@ public class PowerUI implements
         CommandQueue.Callbacks {
 
     static final String TAG = "PowerUI";
-    static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
+    static final boolean DEBUG = false;
     private static final long TEMPERATURE_INTERVAL = 30 * DateUtils.SECOND_IN_MILLIS;
     private static final long TEMPERATURE_LOGGING_INTERVAL = DateUtils.HOUR_IN_MILLIS;
     private static final int MAX_RECENT_TEMPS = 125; // TEMPERATURE_LOGGING_INTERVAL plus a buffer
@@ -117,6 +122,7 @@ public class PowerUI implements
     private final Context mContext;
     private final BroadcastDispatcher mBroadcastDispatcher;
     private final CommandQueue mCommandQueue;
+    private final Lazy<ViewCapture> mLazyViewCapture;
     @Nullable
     private final IVrManager mVrManager;
     private final WakefulnessLifecycle.Observer mWakefulnessObserver =
@@ -157,7 +163,8 @@ public class PowerUI implements
             EnhancedEstimates enhancedEstimates,
             WakefulnessLifecycle wakefulnessLifecycle,
             PowerManager powerManager,
-            UserTracker userTracker) {
+            UserTracker userTracker,
+            dagger.Lazy<ViewCapture> daggerLazyViewCapture) {
         mContext = context;
         mBroadcastDispatcher = broadcastDispatcher;
         mCommandQueue = commandQueue;
@@ -167,6 +174,7 @@ public class PowerUI implements
         mPowerManager = powerManager;
         mWakefulnessLifecycle = wakefulnessLifecycle;
         mUserTracker = userTracker;
+        mLazyViewCapture = toKotlinLazy(daggerLazyViewCapture);
     }
 
     public void start() {
@@ -474,9 +482,11 @@ public class PowerUI implements
     boolean shouldShowHybridWarning(BatteryStateSnapshot snapshot) {
         if (snapshot.getPlugged()
                 || snapshot.getBatteryStatus() == BatteryManager.BATTERY_STATUS_UNKNOWN) {
-            Slog.d(TAG, "can't show warning due to - plugged: " + snapshot.getPlugged()
-                    + " status unknown: "
-                    + (snapshot.getBatteryStatus() == BatteryManager.BATTERY_STATUS_UNKNOWN));
+            if (DEBUG) {
+                Slog.d(TAG, "can't show warning due to - plugged: " + snapshot.getPlugged()
+                        + " status unknown: "
+                        + (snapshot.getBatteryStatus() == BatteryManager.BATTERY_STATUS_UNKNOWN));
+            }
             return false;
         }
 
@@ -641,7 +651,7 @@ public class PowerUI implements
     @Override
     public void showInattentiveSleepWarning() {
         if (mOverlayView == null) {
-            mOverlayView = new InattentiveSleepWarningView(mContext);
+            mOverlayView = new InattentiveSleepWarningView(mContext, mLazyViewCapture);
         }
 
         mOverlayView.show();

@@ -21,6 +21,7 @@ import static android.app.WallpaperManager.FLAG_SYSTEM;
 import static android.app.WallpaperManager.SetWallpaperFlags;
 
 import static com.android.systemui.Flags.fixImageWallpaperCrashSurfaceAlreadyReleased;
+import static com.android.window.flags.Flags.multiCrop;
 import static com.android.window.flags.Flags.offloadColorExtraction;
 
 import android.annotation.Nullable;
@@ -36,7 +37,12 @@ import android.hardware.display.DisplayManager;
 import android.hardware.display.DisplayManager.DisplayListener;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.SystemProperties;
 import android.os.Trace;
+import android.renderscript.Allocation;
+import android.renderscript.Element;
+import android.renderscript.RenderScript;
+import android.renderscript.ScriptIntrinsicBlur;
 import android.service.wallpaper.WallpaperService;
 import android.util.Log;
 import android.view.Surface;
@@ -190,7 +196,10 @@ public class ImageWallpaper extends WallpaperService {
             }
             mWallpaperManager = getDisplayContext().getSystemService(WallpaperManager.class);
             mSurfaceHolder = surfaceHolder;
-            Rect dimensions = mWallpaperManager.peekBitmapDimensions(getSourceFlag(), true);
+            Rect dimensions = !multiCrop()
+                    ? mWallpaperManager.peekBitmapDimensions(getSourceFlag(), true)
+                    : mWallpaperManager.peekBitmapDimensionsAsUser(getSourceFlag(), true,
+                    mUserTracker.getUserId());
             int width = Math.max(MIN_SURFACE_WIDTH, dimensions.width());
             int height = Math.max(MIN_SURFACE_HEIGHT, dimensions.height());
             mSurfaceHolder.setFixedSize(width, height);
@@ -319,6 +328,9 @@ public class ImageWallpaper extends WallpaperService {
             if (canvas != null) {
                 Rect dest = mSurfaceHolder.getSurfaceFrame();
                 try {
+                    if (SystemProperties.getBoolean("persist.sys.wallpaper.blur_enabled", false)) {
+                        bitmap = getBlurredBitmap(bitmap);
+                    }
                     canvas.drawBitmap(bitmap, null, dest, null);
                     mDrawn = true;
                 } finally {
@@ -326,6 +338,31 @@ public class ImageWallpaper extends WallpaperService {
                 }
             }
             Trace.endSection();
+        }
+
+        private Bitmap getBlurredBitmap(Bitmap bitmap) {
+            Bitmap outputBitmap = Bitmap.createBitmap(bitmap);
+            RenderScript rs = RenderScript.create(getDisplayContext());
+            ScriptIntrinsicBlur blurScript = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs));
+            int userBlurRadius = SystemProperties.getInt("persist.sys.wallpaper.blur_radius", 100);
+            // ScriptIntrinsicBlur only supports max blur radius of 25
+            float blurRadius = Math.min(userBlurRadius, 25);
+            Allocation input = Allocation.createFromBitmap(rs, bitmap);
+            Allocation output = Allocation.createFromBitmap(rs, outputBitmap);
+            int passes = Math.max(1, userBlurRadius / 25);
+            blurScript.setRadius(blurRadius);
+            // based from renderengine logic
+            for (int i = 0; i < passes; i++) {
+                blurScript.setInput(input);
+                blurScript.forEach(output);
+                input.copyFrom(outputBitmap);
+            }
+            output.copyTo(outputBitmap);
+            input.destroy();
+            output.destroy();
+            blurScript.destroy();
+            rs.destroy();
+            return outputBitmap;
         }
 
         @VisibleForTesting

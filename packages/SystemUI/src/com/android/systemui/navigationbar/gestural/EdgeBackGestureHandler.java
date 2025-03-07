@@ -29,9 +29,11 @@ import static com.android.systemui.shared.system.QuickStepContract.SYSUI_STATE_T
 import static java.util.stream.Collectors.joining;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -45,14 +47,21 @@ import android.graphics.Rect;
 import android.graphics.Region;
 import android.hardware.input.InputManager;
 import android.icu.text.SimpleDateFormat;
+import android.os.AsyncTask;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.Trace;
+import android.os.UserHandle;
+import android.os.Vibrator;
+import android.os.VibrationEffect;
 import android.provider.DeviceConfig;
 import android.util.ArraySet;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.ISystemGestureExclusionListener;
@@ -71,11 +80,16 @@ import android.window.BackEvent;
 
 import androidx.annotation.DimenRes;
 
+import com.android.internal.util.infinity.InfinityUtils;
 import com.android.internal.config.sysui.SystemUiDeviceConfigFlags;
 import com.android.internal.policy.GestureNavigationSettingsObserver;
+import com.android.systemui.contextualeducation.GestureType;
+import com.android.systemui.Dependency;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.model.SysUiState;
 import com.android.systemui.navigationbar.NavigationModeController;
+import com.android.systemui.navigationbar.gestural.domain.GestureInteractor;
+import com.android.systemui.navigationbar.gestural.domain.TaskMatcher;
 import com.android.systemui.plugins.FalsingManager;
 import com.android.systemui.plugins.NavigationEdgeBackPlugin;
 import com.android.systemui.plugins.PluginListener;
@@ -91,22 +105,26 @@ import com.android.systemui.shared.system.QuickStepContract.SystemUiStateFlags;
 import com.android.systemui.shared.system.SysUiStatsLog;
 import com.android.systemui.shared.system.TaskStackChangeListener;
 import com.android.systemui.shared.system.TaskStackChangeListeners;
+import com.android.systemui.statusbar.NotificationShadeWindowController;
 import com.android.systemui.statusbar.phone.LightBarController;
+import com.android.systemui.tuner.TunerService;
 import com.android.systemui.util.concurrency.BackPanelUiThread;
 import com.android.systemui.util.concurrency.UiThreadContext;
+import com.android.systemui.util.kotlin.JavaAdapter;
 import com.android.wm.shell.back.BackAnimation;
 import com.android.wm.shell.desktopmode.DesktopMode;
 import com.android.wm.shell.pip.Pip;
 
+import kotlinx.coroutines.Job;
+
 import java.io.PrintWriter;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -117,11 +135,15 @@ import javax.inject.Provider;
 /**
  * Utility class to handle edge swipes for back gesture
  */
-public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBackPlugin> {
+public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBackPlugin>,
+        TunerService.Tunable {
 
     private static final String TAG = "EdgeBackGestureHandler";
     private static final int MAX_LONG_PRESS_TIMEOUT = SystemProperties.getInt(
             "gestures.back_timeout", 250);
+
+    private static final String BACK_GESTURE_HEIGHT =
+            "system:" + Settings.System.BACK_GESTURE_HEIGHT;
 
     private static final int MAX_NUM_LOGGED_PREDICTIONS = 10;
     private static final int MAX_NUM_LOGGED_GESTURES = 10;
@@ -156,12 +178,7 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
     private TaskStackChangeListener mTaskStackListener = new TaskStackChangeListener() {
         @Override
         public void onTaskStackChanged() {
-            if (edgebackGestureHandlerGetRunningTasksBackground()) {
-                mBackgroundExecutor.execute(() -> mGestureBlockingActivityRunning.set(
-                        isGestureBlockingActivityRunning()));
-            } else {
-                mGestureBlockingActivityRunning.set(isGestureBlockingActivityRunning());
-            }
+            updateTopActivity();
         }
         @Override
         public void onTaskCreated(int taskId, ComponentName componentName) {
@@ -208,8 +225,6 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
     private final Optional<DesktopMode> mDesktopModeOptional;
     private final FalsingManager mFalsingManager;
     private final Configuration mLastReportedConfig = new Configuration();
-    // Activities which should not trigger Back gesture.
-    private final List<ComponentName> mGestureBlockingActivities = new ArrayList<>();
 
     private final Point mDisplaySize = new Point();
     private final int mDisplayId;
@@ -225,6 +240,12 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
     private final Provider<BackGestureTfClassifierProvider>
             mBackGestureTfClassifierProviderProvider;
     private final Provider<LightBarController> mLightBarControllerProvider;
+
+    private final GestureInteractor mGestureInteractor;
+    private final ArraySet<ComponentName> mBlockedActivities = new ArraySet<>();
+    private Job mBlockedActivitiesJob = null;
+
+    private final JavaAdapter mJavaAdapter;
 
     // The left side edge width where touch down is allowed
     private int mEdgeWidthLeft;
@@ -257,6 +278,16 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
     private boolean mIsOnLeftEdge;
     private boolean mDeferSetIsOnLeftEdge;
 
+    private int mLeftLongSwipeAction;
+    private int mRightLongSwipeAction;
+    private boolean mIsExtendedSwipe;
+    private int mLeftVerticalSwipeAction;
+    private int mRightVerticalSwipeAction;
+    private Handler mHandler;
+    private boolean mImeVisible;
+    private float mStartX;
+    private float mStartY;
+
     private boolean mIsAttached;
     private boolean mIsGestureHandlingEnabled;
     private final Set<Integer> mTrackpadsConnected = new ArraySet<>();
@@ -278,6 +309,12 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
     @SystemUiStateFlags
     private long mSysUiFlags;
 
+    private int mEdgeHeight;
+    private int mEdgeHeightSetting = 0;
+
+    private boolean mEdgeHapticEnabled;
+    private final Vibrator mVibrator;
+
     // For Tf-Lite model.
     private BackGestureTfClassifierProvider mBackGestureTfClassifierProvider;
     private Map<String, Integer> mVocab;
@@ -297,11 +334,19 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
     private Date mTmpLogDate = new Date();
 
     private final GestureNavigationSettingsObserver mGestureNavigationSettingsObserver;
+    private final NotificationShadeWindowController mNotificationShadeWindowController;
+
+    private boolean mIsBackGestureArrowEnabled;
+    private boolean mBlockedGesturalNavigation;
 
     private final NavigationEdgeBackPlugin.BackCallback mBackCallback =
             new NavigationEdgeBackPlugin.BackCallback() {
                 @Override
                 public void triggerBack() {
+                    if (mEdgeHapticEnabled) {
+                        vibrateBack(true /* Click */);
+                    }
+
                     // Notify FalsingManager that an intentional gesture has occurred.
                     mFalsingManager.isFalseTouch(BACK_GESTURE);
                     // Only inject back keycodes when ahead-of-time back dispatching is disabled.
@@ -423,8 +468,12 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
             Optional<DesktopMode> desktopModeOptional,
             FalsingManager falsingManager,
             Provider<BackGestureTfClassifierProvider> backGestureTfClassifierProviderProvider,
-            Provider<LightBarController> lightBarControllerProvider) {
+            Provider<LightBarController> lightBarControllerProvider,
+            NotificationShadeWindowController notificationShadeWindowController,
+            GestureInteractor gestureInteractor,
+            JavaAdapter javaAdapter) {
         mContext = context;
+        mVibrator = context.getSystemService(Vibrator.class);
         mDisplayId = context.getDisplayId();
         mUiThreadContext = uiThreadContext;
         mBackgroundExecutor = backgroundExecutor;
@@ -443,7 +492,10 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         mFalsingManager = falsingManager;
         mBackGestureTfClassifierProviderProvider = backGestureTfClassifierProviderProvider;
         mLightBarControllerProvider = lightBarControllerProvider;
+        mGestureInteractor = gestureInteractor;
+        mJavaAdapter = javaAdapter;
         mLastReportedConfig.setTo(mContext.getResources().getConfiguration());
+
         ComponentName recentsComponentName = ComponentName.unflattenFromString(
                 context.getString(com.android.internal.R.string.config_recentsComponentName));
         if (recentsComponentName != null) {
@@ -463,8 +515,14 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                 } else {
                     String[] gestureBlockingActivities = resources.getStringArray(resId);
                     for (String gestureBlockingActivity : gestureBlockingActivities) {
-                        mGestureBlockingActivities.add(
-                                ComponentName.unflattenFromString(gestureBlockingActivity));
+                        final ComponentName component =
+                                ComponentName.unflattenFromString(gestureBlockingActivity);
+
+                        if (component != null) {
+                            mGestureInteractor.addGestureBlockedMatcher(
+                                    new TaskMatcher.TopActivityComponent(component),
+                                    GestureInteractor.Scope.Local);
+                        }
                     }
                 }
             } catch (NameNotFoundException e) {
@@ -478,7 +536,29 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                 mUiThreadContext.getHandler(), bgHandler, mContext,
                 this::onNavigationSettingsChanged);
 
+        mHandler = new Handler();
         updateCurrentUserResources();
+        mNotificationShadeWindowController = notificationShadeWindowController;
+    }
+
+    private void updateEdgeHeightValue() {
+        if (mDisplaySize == null) {
+            return;
+        }
+        // mEdgeHeightSetting cant be range 0 - 3
+        // 0 means full height
+        // 1 measns half of the screen
+        // 2 means lower third of the screen
+        // 3 means lower sicth of the screen
+        if (mEdgeHeightSetting == 0) {
+            mEdgeHeight = mDisplaySize.y;
+        } else if (mEdgeHeightSetting == 1) {
+            mEdgeHeight = (mDisplaySize.y * 3) / 4;
+        } else if (mEdgeHeightSetting == 2) {
+            mEdgeHeight = mDisplaySize.y / 2;
+        } else {
+            mEdgeHeight = mDisplaySize.y / 4;
+        }
     }
 
     public void setStateChangeCallback(Runnable callback) {
@@ -501,15 +581,26 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         Resources res = mNavigationModeController.getCurrentUserContext().getResources();
         mEdgeWidthLeft = mGestureNavigationSettingsObserver.getLeftSensitivity(res);
         mEdgeWidthRight = mGestureNavigationSettingsObserver.getRightSensitivity(res);
+        mEdgeHapticEnabled = mGestureNavigationSettingsObserver.getEdgeHaptic();
         final boolean previousForcedVisible = mIsButtonForcedVisible;
         mIsButtonForcedVisible =
                 mGestureNavigationSettingsObserver.areNavigationButtonForcedVisible();
+        mIsBackGestureArrowEnabled = mGestureNavigationSettingsObserver.getBackArrowGesture();
         // Update this before calling mButtonForcedVisibleCallback since NavigationBar will relayout
         // and query isHandlingGestures() as a part of the callback
         mIsBackGestureAllowed = !mIsButtonForcedVisible;
         if (previousForcedVisible != mIsButtonForcedVisible
                 && mButtonForcedVisibleCallback != null) {
             mButtonForcedVisibleCallback.accept(mIsButtonForcedVisible);
+        }
+
+        mLeftLongSwipeAction = mGestureNavigationSettingsObserver.getLeftLongSwipeAction();
+        mRightLongSwipeAction = mGestureNavigationSettingsObserver.getRightLongSwipeAction();
+        mIsExtendedSwipe = mGestureNavigationSettingsObserver.getIsExtendedSwipe();
+        mLeftVerticalSwipeAction = mGestureNavigationSettingsObserver.getLeftLSwipeAction();
+        mRightVerticalSwipeAction = mGestureNavigationSettingsObserver.getRightLSwipeAction();
+        if (mEdgeBackPlugin != null) {
+            mEdgeBackPlugin.setLongSwipeEnabled(mIsExtendedSwipe);
         }
 
         final DisplayMetrics dm = res.getDisplayMetrics();
@@ -525,6 +616,9 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         mMLEnableWidth = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 12.0f, dm);
         if (mMLEnableWidth > mEdgeWidthRight) mMLEnableWidth = mEdgeWidthRight;
         if (mMLEnableWidth > mEdgeWidthLeft) mMLEnableWidth = mEdgeWidthLeft;
+
+        final TunerService tunerService = Dependency.get(TunerService.class);
+        tunerService.addTunable(this, BACK_GESTURE_HEIGHT);
 
         // Reduce the default touch slop to ensure that we can intercept the gesture
         // before the app starts to react to it.
@@ -554,6 +648,14 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         updateCurrentUserResources();
         if (mStateChangeCallback != null && wasBackAllowed != isHandlingGestures()) {
             mStateChangeCallback.run();
+        }
+    }
+
+    private void updateTopActivity() {
+        if (edgebackGestureHandlerGetRunningTasksBackground()) {
+            mBackgroundExecutor.execute(() -> updateTopActivityPackageName());
+        } else {
+            updateTopActivityPackageName();
         }
     }
 
@@ -603,8 +705,18 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         }
     }
 
+    private void vibrateBack(boolean light) {
+            AsyncTask.execute(() ->
+                    mVibrator.vibrate(VibrationEffect.get(light ? VibrationEffect.EFFECT_CLICK :
+                        VibrationEffect.EFFECT_HEAVY_CLICK, true  /* fallback */)));
+    }
+
     public void onNavBarTransientStateChanged(boolean isTransient) {
         mIsNavBarShownTransiently = isTransient;
+    }
+
+    public void setBlockedGesturalNavigation(boolean blocked) {
+        mBlockedGesturalNavigation = blocked;
     }
 
     private void disposeInputChannel() {
@@ -658,6 +770,11 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                     Log.e(TAG, "Failed to unregister window manager callbacks", e);
                 }
 
+                if (mBlockedActivitiesJob != null) {
+                    mBlockedActivitiesJob.cancel(new CancellationException());
+                    mBlockedActivitiesJob = null;
+                }
+                mBlockedActivities.clear();
             } else {
                 mBackgroundExecutor.execute(mGestureNavigationSettingsObserver::register);
                 updateDisplaySize();
@@ -684,12 +801,22 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                 // Register input event receiver
                 mInputMonitor = new InputMonitorCompat("edge-swipe", mDisplayId);
                 mInputEventReceiver = mInputMonitor.getInputReceiver(mUiThreadContext.getLooper(),
-                        mUiThreadContext.getChoreographer(), this::onInputEvent);
+                        mUiThreadContext.getChoreographer(), event -> {
+                            if (!mBlockedGesturalNavigation) {
+                                onInputEvent(event);
+                            }
+                        });
 
                 // Add a nav bar panel window
                 resetEdgeBackPlugin();
                 mPluginManager.addPluginListener(
                         this, NavigationEdgeBackPlugin.class, /*allowMultiple=*/ false);
+
+                // Begin listening to changes in blocked activities list
+                mBlockedActivitiesJob = mJavaAdapter.alwaysCollectFlow(
+                        mGestureInteractor.getTopActivityBlocked(),
+                        blocked -> mGestureBlockingActivityRunning.set(blocked));
+
             }
             // Update the ML model resources.
             updateMLModelState();
@@ -718,6 +845,7 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
             mEdgeBackPlugin = edgeBackPlugin;
             mEdgeBackPlugin.setBackCallback(mBackCallback);
             mEdgeBackPlugin.setLayoutParams(createLayoutParams());
+            mEdgeBackPlugin.setLongSwipeEnabled(mIsExtendedSwipe);
             updateDisplaySize();
         } finally {
             Trace.endSection();
@@ -730,6 +858,14 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
 
     public boolean isButtonForcedVisible() {
         return mIsButtonForcedVisible;
+    }
+
+    @Override
+    public void onTuningChanged(String key, String newValue) {
+        if (BACK_GESTURE_HEIGHT.equals(key)) {
+            mEdgeHeightSetting = TunerService.parseInteger(newValue, 0);
+            updateEdgeHeightValue();
+        }
     }
 
     /**
@@ -866,6 +1002,11 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         if (y >= (mDisplaySize.y - mBottomGestureHeight)) {
             return false;
         }
+        if (mEdgeHeight != 0) {
+            if (y < (mDisplaySize.y - mBottomGestureHeight - mEdgeHeight)) {
+                return false;
+            }
+        }
         // If the point is way too far (twice the margin), it is
         // not interesting to us for logging purposes, nor we
         // should process it.  Simply return false and keep
@@ -936,7 +1077,19 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
             return withinRange;
         }
 
-        if (mExcludeRegion.contains(x, y)) {
+        /* If Launcher is showing and wants to block back gesture, let's still trigger our custom
+        swipe actions at the very bottom of the screen, because we are cool.*/
+        boolean isInExcludedRegion = false;
+        // still block extended swipe if keyboard is showing, to avoid conflicts with IME gestures
+        if (!mImeVisible && (
+                mIsExtendedSwipe
+                || (mLeftLongSwipeAction != 0 && mIsOnLeftEdge)  || (mRightLongSwipeAction != 0 && !mIsOnLeftEdge))) {
+            isInExcludedRegion= mExcludeRegion.contains(x, y)
+                && y < ((mDisplaySize.y / 4) * 3);
+        } else {
+            isInExcludedRegion= mExcludeRegion.contains(x, y);
+        }
+        if (isInExcludedRegion) {
             if (withinRange) {
                 // We don't have the end point for logging purposes.
                 mEndPoint.x = -1;
@@ -952,8 +1105,13 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         return withinRange;
     }
 
+    public void setImeVisible(boolean visible) {
+        mImeVisible = visible;
+    }
+
     private void cancelGesture(MotionEvent ev) {
         // Send action cancel to reset all the touch events
+        mHandler.removeCallbacksAndMessages(null);
         mAllowGesture = false;
         mLogGesture = false;
         mInRejectedExclusion = false;
@@ -1036,6 +1194,7 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
             }
             if (mAllowGesture) {
                 mEdgeBackPlugin.setIsLeftPanel(mIsOnLeftEdge);
+                mEdgeBackPlugin.setBackArrowVisibility(mIsBackGestureArrowEnabled);
                 mEdgeBackPlugin.onMotionEvent(ev);
                 dispatchToBackAnimation(ev);
             }
@@ -1059,8 +1218,12 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                             mIsTrackpadThreeFingerSwipe), mDisabledForQuickstep,
                     mGestureBlockingActivityRunning.get(), mIsInPip, mDisplaySize,
                     mEdgeWidthLeft, mLeftInset, mEdgeWidthRight, mRightInset, mExcludeRegion));
+            mStartX = ev.getX();
+            mStartY = ev.getY();
         } else if (mAllowGesture || mLogGesture) {
             if (!mThresholdCrossed) {
+                // mThresholdCrossed is true only after the first move event
+                // then other events will go straight to "forward touch" line
                 mEndPoint.x = (int) ev.getX();
                 mEndPoint.y = (int) ev.getY();
                 if (action == MotionEvent.ACTION_POINTER_DOWN && !mIsTrackpadThreeFingerSwipe) {
@@ -1083,7 +1246,8 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                         mDeferSetIsOnLeftEdge = false;
                     }
 
-                    if ((ev.getEventTime() - ev.getDownTime()) > mLongPressTimeout) {
+                    int elapsedTime = (int)(ev.getEventTime() - ev.getDownTime());
+                    if (elapsedTime > mLongPressTimeout) {
                         if (mAllowGesture) {
                             logGesture(SysUiStatsLog.BACK_GESTURE__TYPE__INCOMPLETE_LONG_PRESS);
                             cancelGesture(ev);
@@ -1114,6 +1278,8 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                         if (mAllowGesture) {
                             if (mBackAnimation != null) {
                                 mBackAnimation.onThresholdCrossed();
+                                mOverviewProxyService.updateContextualEduStats(
+                                        mIsTrackpadThreeFingerSwipe, GestureType.BACK);
                             } else {
                                 pilferPointers();
                             }
@@ -1123,6 +1289,30 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                         }
                     }
                 }
+            }
+
+            boolean isUp = action == MotionEvent.ACTION_UP;
+            boolean isCancel = action == MotionEvent.ACTION_CANCEL;
+            boolean isMove = action == MotionEvent.ACTION_MOVE;
+            float longSwipeThreshold = mDisplaySize.x * 0.45f;
+            float touchTranslation = Math.abs(ev.getX() - mStartX);
+            boolean almostLongSwipe = mIsExtendedSwipe && (touchTranslation > longSwipeThreshold);
+            if (isMove && almostLongSwipe) {
+                float deltaX = Math.abs(ev.getX() - mDownPoint.x);
+                float deltaY = Math.abs(ev.getY() - mDownPoint.y);
+                // give priority to horizontal (X) swipe
+                if (deltaX  > (int)((mDisplaySize.x / 4) * 2.5f)) {
+                    mLongSwipeAction.setIsVertical(false);
+                }
+                if (deltaY  > (mDisplaySize.y / 4)) {
+                    mLongSwipeAction.setIsVertical(true);
+                }
+            }
+            if (isUp && almostLongSwipe) {
+                mLongSwipeAction.run();
+                mHandler.removeCallbacksAndMessages(null);
+            } else if (isUp || isCancel) {
+                mHandler.removeCallbacksAndMessages(null);
             }
 
             if (mAllowGesture) {
@@ -1177,6 +1367,108 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         }
     }
 
+    private SwipeRunnable mLongSwipeAction = new SwipeRunnable();
+    private class SwipeRunnable implements Runnable {
+        private boolean mIsVertical;
+
+        public void setIsVertical(boolean vertical) {
+            mIsVertical = vertical;
+        }
+
+        @Override
+        public void run() {
+            triggerAction(mIsVertical);
+        }
+    }
+
+    private void prepareForAction() {
+        // cancel touch event then trigger the action
+        final long now = SystemClock.uptimeMillis();
+        final MotionEvent ev = MotionEvent.obtain(now, now,
+                MotionEvent.ACTION_CANCEL, 0.0f, 0.0f, 0);
+        cancelGesture(ev);
+        if (mEdgeHapticEnabled) {
+            vibrateBack(false /* HEAVY_CLICK */);
+        }
+    }
+
+    private void triggerAction(boolean isVertical) {
+        int action = mIsOnLeftEdge ? (isVertical ? mLeftVerticalSwipeAction : mLeftLongSwipeAction)
+                : (isVertical ? mRightVerticalSwipeAction : mRightLongSwipeAction);
+
+        if (action == 0) return;
+
+        prepareForAction();
+
+        switch (action) {
+            case 0: // No action
+            default:
+                break;
+            case 1: // Voice search
+                InfinityUtils.launchVoiceSearch(mContext);
+                break;
+            case 2: // Camera
+                InfinityUtils.launchCamera(mContext);
+                break;
+            case 3: // Flashlight
+                InfinityUtils.toggleCameraFlash();
+                break;
+            case 4: // Application
+                launchApp(mContext, mIsOnLeftEdge, isVertical);
+                break;
+            case 5: // Volume panel
+                InfinityUtils.toggleVolumePanel(mContext);
+                break;
+            case 6: // Screen off
+                InfinityUtils.switchScreenOff(mContext);
+                break;
+            case 7: // Screenshot
+                InfinityUtils.takeScreenshot(true);
+                break;
+            case 8: // Notification panel
+                InfinityUtils.toggleNotifications();
+                break;
+            case 9: // QS panel
+                InfinityUtils.toggleQsPanel();
+                break;
+            case 10: // Clear notifications
+                InfinityUtils.clearAllNotifications();
+                break;
+            case 11: // Ringer modes
+                InfinityUtils.toggleRingerModes(mContext);
+                break;
+            case 12: // Kill app
+                InfinityUtils.killForegroundApp();
+                break;
+            case 13: // Switch recent app
+                InfinityUtils.switchToLastApp(mContext);
+                break;
+        }
+    }
+
+    private void launchApp(Context context, boolean leftEdgeApp, boolean isVerticalSwipe) {
+        Intent intent = null;
+        String packageName = Settings.System.getStringForUser(context.getContentResolver(),
+                leftEdgeApp ? (isVerticalSwipe ? Settings.System.LEFT_VERTICAL_BACK_SWIPE_APP_ACTION : Settings.System.LEFT_LONG_BACK_SWIPE_APP_ACTION)
+                : (isVerticalSwipe ? Settings.System.RIGHT_VERTICAL_BACK_SWIPE_APP_ACTION : Settings.System.RIGHT_LONG_BACK_SWIPE_APP_ACTION),
+                UserHandle.USER_CURRENT);
+        String activity = Settings.System.getStringForUser(context.getContentResolver(),
+                leftEdgeApp ? (isVerticalSwipe ? Settings.System.LEFT_VERTICAL_BACK_SWIPE_APP_ACTIVITY_ACTION : Settings.System.LEFT_LONG_BACK_SWIPE_APP_ACTIVITY_ACTION)
+                : (isVerticalSwipe ? Settings.System.RIGHT_VERTICAL_BACK_SWIPE_APP_ACTIVITY_ACTION : Settings.System.RIGHT_LONG_BACK_SWIPE_APP_ACTIVITY_ACTION),
+                UserHandle.USER_CURRENT);
+        boolean launchActivity = activity != null && !TextUtils.equals("NONE", activity);
+        try {
+            if (launchActivity) {
+                intent = new Intent(Intent.ACTION_MAIN);
+                intent.setClassName(packageName, activity);
+            } else {
+                intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
+            }
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            context.startActivity(intent);
+        } catch (Exception e) {}
+    }
+
     private void updateDisabledForQuickstep(Configuration newConfig) {
         int rotation = newConfig.windowConfiguration.getRotation();
         mDisabledForQuickstep = mStartingQuickstepRotation > -1 &&
@@ -1210,6 +1502,7 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
             mEdgeBackPlugin.setDisplaySize(mDisplaySize);
         }
         updateBackAnimationThresholds();
+        updateEdgeHeightValue();
     }
 
     private void updateBackAnimationThresholds() {
@@ -1226,7 +1519,7 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         final KeyEvent ev = new KeyEvent(when, when, action, code, 0 /* repeat */,
                 0 /* metaState */, KeyCharacterMap.VIRTUAL_KEYBOARD, 0 /* scancode */,
                 KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY,
-                InputDevice.SOURCE_KEYBOARD);
+                InputDevice.SOURCE_NAVIGATION_BAR);
 
         ev.setDisplayId(mContext.getDisplay().getDisplayId());
         return mContext.getSystemService(InputManager.class)
@@ -1280,7 +1573,7 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         }
     }
 
-    private boolean isGestureBlockingActivityRunning() {
+    private void updateTopActivityPackageName() {
         ActivityManager.RunningTaskInfo runningTask =
                 ActivityManagerWrapper.getInstance().getRunningTask();
         ComponentName topActivity = runningTask == null ? null : runningTask.topActivity;
@@ -1289,21 +1582,24 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         } else {
             mPackageName = "_UNKNOWN";
         }
-        return topActivity != null && mGestureBlockingActivities.contains(topActivity);
     }
 
-    public void setBackAnimation(BackAnimation backAnimation) {
+    public void setBackAnimation(@Nullable BackAnimation backAnimation) {
         mBackAnimation = backAnimation;
-        mBackAnimation.setPilferPointerCallback(() -> {
-            pilferPointers();
-        });
-        updateBackAnimationThresholds();
-        if (mLightBarControllerProvider.get() != null) {
-            mBackAnimation.setStatusBarCustomizer((appearance) -> {
-                mUiThreadContext.getExecutor().execute(() ->
-                        mLightBarControllerProvider.get()
-                                .customizeStatusBarAppearance(appearance));
-            });
+        if (backAnimation != null) {
+            final Executor uiThreadExecutor = mUiThreadContext.getExecutor();
+            backAnimation.setPilferPointerCallback(
+                    () -> uiThreadExecutor.execute(this::pilferPointers));
+            backAnimation.setTopUiRequestCallback(
+                    (requestTopUi, tag) -> uiThreadExecutor.execute(() ->
+                            mNotificationShadeWindowController.setRequestTopUi(requestTopUi, tag)));
+            updateBackAnimationThresholds();
+            if (mLightBarControllerProvider.get() != null) {
+                mBackAnimation.setStatusBarCustomizer((appearance) ->
+                        uiThreadExecutor.execute(() ->
+                            mLightBarControllerProvider.get()
+                                    .customizeStatusBarAppearance(appearance)));
+            }
         }
     }
 
@@ -1333,6 +1629,11 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
         private final Provider<BackGestureTfClassifierProvider>
                 mBackGestureTfClassifierProviderProvider;
         private final Provider<LightBarController> mLightBarControllerProvider;
+        private final NotificationShadeWindowController mNotificationShadeWindowController;
+
+        private final GestureInteractor mGestureInteractor;
+
+        private final JavaAdapter mJavaAdapter;
 
         @Inject
         public Factory(OverviewProxyService overviewProxyService,
@@ -1353,7 +1654,10 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                         FalsingManager falsingManager,
                         Provider<BackGestureTfClassifierProvider>
                                 backGestureTfClassifierProviderProvider,
-                        Provider<LightBarController> lightBarControllerProvider) {
+                        Provider<LightBarController> lightBarControllerProvider,
+                        NotificationShadeWindowController notificationShadeWindowController,
+                        GestureInteractor gestureInteractor,
+                        JavaAdapter javaAdapter) {
             mOverviewProxyService = overviewProxyService;
             mSysUiState = sysUiState;
             mPluginManager = pluginManager;
@@ -1372,6 +1676,9 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
             mFalsingManager = falsingManager;
             mBackGestureTfClassifierProviderProvider = backGestureTfClassifierProviderProvider;
             mLightBarControllerProvider = lightBarControllerProvider;
+            mNotificationShadeWindowController = notificationShadeWindowController;
+            mGestureInteractor = gestureInteractor;
+            mJavaAdapter = javaAdapter;
         }
 
         /** Construct a {@link EdgeBackGestureHandler}. */
@@ -1396,7 +1703,10 @@ public class EdgeBackGestureHandler implements PluginListener<NavigationEdgeBack
                             mDesktopModeOptional,
                             mFalsingManager,
                             mBackGestureTfClassifierProviderProvider,
-                            mLightBarControllerProvider));
+                            mLightBarControllerProvider,
+                            mNotificationShadeWindowController,
+                            mGestureInteractor,
+                            mJavaAdapter));
         }
     }
 

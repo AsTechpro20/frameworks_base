@@ -17,7 +17,6 @@ import android.app.ActivityManager
 import android.app.UserSwitchObserver
 import android.content.Context
 import android.database.ContentObserver
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.UserHandle
 import android.provider.Settings
@@ -33,6 +32,7 @@ import com.android.systemui.plugins.clocks.ClockController
 import com.android.systemui.plugins.clocks.ClockId
 import com.android.systemui.plugins.clocks.ClockMessageBuffers
 import com.android.systemui.plugins.clocks.ClockMetadata
+import com.android.systemui.plugins.clocks.ClockPickerConfig
 import com.android.systemui.plugins.clocks.ClockProvider
 import com.android.systemui.plugins.clocks.ClockProviderPlugin
 import com.android.systemui.plugins.clocks.ClockSettings
@@ -45,6 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val DEBUG = false
 private val KEY_TIMESTAMP = "appliedTimestamp"
 private val KNOWN_PLUGINS =
     mapOf<String, List<ClockMetadata>>(
@@ -88,7 +89,6 @@ open class ClockRegistry(
     val clockBuffers: ClockMessageBuffers? = null,
     val keepAllLoaded: Boolean,
     subTag: String,
-    var isTransitClockEnabled: Boolean = false,
     val assert: ThreadAssert = ThreadAssert(),
 ) {
     private val TAG = "${ClockRegistry::class.simpleName} ($subTag)"
@@ -186,12 +186,9 @@ open class ClockRegistry(
                 plugin.initialize(clockBuffers)
 
                 var isClockListChanged = false
+                plugin ?: return
                 for (clock in plugin.getClocks()) {
                     val id = clock.clockId
-                    if (!isTransitClockEnabled && id == "DIGITAL_CLOCK_METRO") {
-                        continue
-                    }
-
                     val info =
                         availableClocks.concurrentGetOrPut(id, ClockInfo(clock, plugin, manager)) {
                             isClockListChanged = true
@@ -225,6 +222,7 @@ open class ClockRegistry(
                 plugin: ClockProviderPlugin,
                 manager: PluginLifecycleManager<ClockProviderPlugin>
             ) {
+                plugin ?: return
                 for (clock in plugin.getClocks()) {
                     val id = clock.clockId
                     val info = availableClocks[id]
@@ -341,6 +339,7 @@ open class ClockRegistry(
     }
 
     private var isClockChanged = AtomicBoolean(false)
+
     private fun triggerOnCurrentClockChanged() {
         val shouldSchedule = isClockChanged.compareAndSet(false, true)
         if (!shouldSchedule) {
@@ -355,6 +354,7 @@ open class ClockRegistry(
     }
 
     private var isClockListChanged = AtomicBoolean(false)
+
     private fun triggerOnAvailableClocksChanged() {
         val shouldSchedule = isClockListChanged.compareAndSet(false, true)
         if (!shouldSchedule) {
@@ -458,6 +458,7 @@ open class ClockRegistry(
     }
 
     private var isQueued = AtomicBoolean(false)
+
     fun verifyLoadedProviders() {
         val shouldSchedule = isQueued.compareAndSet(false, true)
         if (!shouldSchedule) {
@@ -565,8 +566,8 @@ open class ClockRegistry(
         return availableClocks.map { (_, clock) -> clock.metadata }
     }
 
-    fun getClockThumbnail(clockId: ClockId): Drawable? =
-        availableClocks[clockId]?.provider?.getClockThumbnail(clockId)
+    fun getClockPickerConfig(clockId: ClockId): ClockPickerConfig? =
+        availableClocks[clockId]?.provider?.getClockPickerConfig(clockId)
 
     fun createExampleClock(clockId: ClockId): ClockController? = createClock(clockId)
 

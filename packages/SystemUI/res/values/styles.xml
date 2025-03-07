@@ -14,14 +14,6 @@
      limitations under the License.
 -->
 
-<!--
-**
-** Changes from Qualcomm Innovation Center are provided under the following license:
-** Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
-** SPDX-License-Identifier: BSD-3-Clause-Clear
-*/
--->
-
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:androidprv="http://schemas.android.com/apk/prv/res/android">
 
@@ -135,7 +127,7 @@
     <style name="TextAppearance.QS.TileLabel">
         <item name="android:textSize">@dimen/qs_tile_text_size</item>
         <item name="android:letterSpacing">0.01</item>
-        <item name="android:lineHeight">20sp</item>
+        <item name="android:lineHeight">16sp</item>
         <item name="android:fontFamily">@*android:string/config_bodyFontFamilyMedium</item>
     </style>
 
@@ -152,21 +144,28 @@
 
     <style name="TextAppearance.QS.Status">
         <item name="android:fontFamily">@*android:string/config_headlineFontFamily</item>
-        <item name="android:textColor">?attr/onSurface</item>
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
         <item name="android:textSize">14sp</item>
         <item name="android:letterSpacing">0.01</item>
     </style>
 
-    <style name="TextAppearance.QS.Status.Carriers" />
+    <style name="TextAppearance.QS.Status.Carriers">
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
+    </style>
 
     <style name="TextAppearance.QS.Status.Carriers.NoCarrierText">
-        <item name="android:textColor">?attr/onSurfaceVariant</item>
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
     </style>
 
     <style name="TextAppearance.QS.Status.Build">
         <item name="android:textColor">?attr/onSurfaceVariant</item>
     </style>
 
+    <style name="TextAppearance.QS.TileLabel.DataUsage">
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">@*android:string/config_bodyFontFamily</item>
+    </style>
+    
     <style name="TextAppearance.DeviceManagementDialog.Title" parent="@android:style/TextAppearance.DeviceDefault.DialogWindowTitle"/>
 
     <style name="TextAppearance.AuthCredential">
@@ -496,31 +495,30 @@
         <item name="containerStyle">@style/AuthNonBioCredentialPinPasswordContainerStyle</item>
     </style>
 
-    <style name="Theme.SystemUI.QuickSettings" parent="@*android:style/Theme.DeviceDefault">
+    <style name="Theme.SystemUI.QuickSettings" parent="@*android:style/Theme.DeviceDefault.SystemUI">
         <item name="isQsTheme">true</item>
         <item name="lightIconTheme">@style/QSIconTheme</item>
         <item name="darkIconTheme">@style/QSIconTheme</item>
-        <item name="android:colorError">@*android:color/error_color_material_dark</item>
+        <item name="android:colorError">@*android:color/error_color_material_light</item>
         <item name="android:windowIsFloating">true</item>
         <item name="android:homeAsUpIndicator">@drawable/ic_arrow_back</item>
 
         <item name="surfaceBright">?androidprv:attr/materialColorSurfaceBright</item>
         <item name="android:colorBackground">?attr/surfaceBright</item>
-        <item name="scHigh">?androidprv:attr/materialColorSurfaceContainerHigh</item>
+        <item name="scHigh">?androidprv:attr/colorSurface</item>
         <item name="primary">?androidprv:attr/materialColorPrimary</item>
         <item name="tertiary">?androidprv:attr/materialColorTertiary</item>
         <item name="onSurface">?androidprv:attr/materialColorOnSurface</item>
         <item name="onSurfaceVariant">?androidprv:attr/materialColorOnSurfaceVariant</item>
         <item name="outline">?androidprv:attr/materialColorOutline</item>
-
-        <item name="shadeActive">@color/material_dynamic_primary90</item>
-        <item name="onShadeActive">@color/material_dynamic_primary10</item>
-        <item name="onShadeActiveVariant">@color/material_dynamic_primary30</item>
-        <item name="shadeInactive">@color/material_dynamic_neutral20</item>
-        <item name="onShadeInactive">@color/material_dynamic_neutral90</item>
-        <item name="onShadeInactiveVariant">@color/material_dynamic_neutral_variant80</item>
-        <item name="shadeDisabled">@color/shade_disabled</item>
-        <item name="underSurface">@color/material_dynamic_neutral0</item>
+        <item name="shadeActive">?android:attr/colorAccent</item>
+        <item name="onShadeActive">?android:attr/textColorPrimaryInverse</item>
+        <item name="onShadeActiveVariant">?android:attr/textColorSecondaryInverse</item>
+        <item name="shadeInactive">@*android:color/surface_light</item>
+        <item name="onShadeInactive">?android:attr/textColorPrimary</item>
+        <item name="onShadeInactiveVariant">?android:attr/textColorSecondary</item>
+        <item name="shadeDisabled">@*android:color/surface_light</item>
+        <item name="underSurface">@android:color/system_neutral1_100</item>
         <item name="android:itemTextAppearance">@style/Control.MenuItem</item>
     </style>
 
@@ -553,7 +551,7 @@
     <style name="Theme.SystemUI.DayNightDialog" parent="@android:style/Theme.DeviceDefault.Light.Dialog"/>
 
     <style name="Theme.SystemUI.Dialog" parent="@style/Theme.SystemUI.DayNightDialog">
-        <item name="android:buttonCornerRadius">28dp</item>
+        <item name="android:buttonCornerRadius">@*android:dimen/config_dialogCornerRadius</item>
         <item name="android:buttonBarPositiveButtonStyle">@style/Widget.Dialog.Button</item>
         <item name="android:buttonBarNegativeButtonStyle">@style/Widget.Dialog.Button.BorderButton</item>
         <item name="android:buttonBarNeutralButtonStyle">@style/Widget.Dialog.Button.BorderButton</item>
@@ -790,7 +788,7 @@
 
     <style name="QSCustomizeToolbar" parent="@*android:style/Widget.DeviceDefault.Toolbar">
         <item name="android:textColor">?attr/onSurface</item>
-        <item name="android:elevation">10dp</item>
+        <item name="android:elevation">0dp</item>
     </style>
 
     <!-- Media controls always have light background -->
@@ -800,9 +798,9 @@
     </style>
 
     <style name="MediaPlayer.ProgressBar" parent="@android:style/Widget.ProgressBar.Horizontal">
-        <item name="android:thumb">@drawable/media_seekbar_thumb</item>
         <item name="android:thumbTint">?android:attr/textColorPrimary</item>
         <item name="android:progressDrawable">@drawable/media_squiggly_progress</item>
+        <item name="android:thumb">@*android:drawable/seekbar_thumb_material_anim</item>
         <item name="android:progressTint">?android:attr/textColorPrimary</item>
         <item name="android:progressBackgroundTint">?android:attr/textColorTertiary</item>
         <item name="android:splitTrack">false</item>
@@ -1157,7 +1155,7 @@
         <!-- used to override dark/light theming -->
         <item name="*android:colorBackgroundFloating">@color/GM2_grey_800</item>
         <item name="*android:colorPopupBackground">@color/GM2_grey_800</item>
-        <item name="*android:dialogCornerRadius">8dp</item>
+        <item name="*android:dialogCornerRadius">@*android:dimen/config_dialogCornerRadius</item>
     </style>
 
     <style name="TextAppearance.ControlSetup">
@@ -1296,7 +1294,7 @@
     <style name="Widget" />
     <style name="Widget.Dialog" />
     <style name="Widget.Dialog.Button">
-        <item name="android:buttonCornerRadius">28dp</item>
+        <item name="android:buttonCornerRadius">@*android:dimen/config_dialogCornerRadius</item>
         <item name="android:background">@drawable/qs_dialog_btn_filled</item>
         <item name="android:textColor">@color/qs_dialog_btn_filled_text_color</item>
         <item name="android:textSize">14sp</item>
@@ -1383,13 +1381,13 @@
 
     <style name="TextAppearance.InternetDialog">
         <item name="android:fontFamily">@*android:string/config_headlineFontFamily</item>
-        <item name="android:textSize">@dimen/internet_dialog_text_size</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:textColor">?androidprv:attr/materialColorOnSurface</item>
         <item name="android:textDirection">locale</item>
     </style>
 
     <style name="TextAppearance.InternetDialog.Secondary">
-        <item name="android:textSize">@dimen/internet_dialog_text_size_second</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:textColor">?androidprv:attr/materialColorOnSurfaceVariant</item>
     </style>
 
@@ -1461,6 +1459,12 @@
 
     <style name="BluetoothTileDialog.DeviceSummary.Active">
         <item name="android:textColor">?androidprv:attr/materialColorOnPrimaryContainer</item>
+    </style>
+
+    <style name="BluetoothTileDialog.AudioSharingButton" parent="Widget.Dialog.Button">
+        <item name="android:background">@drawable/audio_sharing_btn_background</item>
+        <item name="android:textColor">@color/audio_sharing_btn_text_color</item>
+        <item name="android:drawableTint">@color/audio_sharing_btn_text_color</item>
     </style>
 
     <style name="BroadcastDialog">
@@ -1627,14 +1631,13 @@
     <style name="TextAppearance.MagnificationSetting" />
 
     <style name="TextAppearance.MagnificationSetting.Title">
-        <item name="android:fontFamily">google-sans</item>
+        <item name="android:fontFamily">@*android:string/config_headlineFontFamily</item>
         <item name="android:textColor">?androidprv:attr/textColorPrimary</item>
         <item name="android:textSize">@dimen/magnification_setting_text_size</item>
-        <item name="android:singleLine">true</item>
     </style>
 
     <style name="TextAppearance.MagnificationSetting.EditButton">
-        <item name="android:fontFamily">google-sans</item>
+        <item name="android:fontFamily">@*android:string/config_headlineFontFamily</item>
         <item name="android:textColor">?androidprv:attr/colorAccent</item>
         <item name="android:textSize">@dimen/magnification_setting_text_size</item>
         <item name="android:lineHeight">@dimen/magnification_setting_button_line_height</item>
@@ -1642,7 +1645,7 @@
     </style>
 
     <style name="TextAppearance.MagnificationSetting.DoneButton">
-        <item name="android:fontFamily">google-sans</item>
+        <item name="android:fontFamily">@*android:string/config_headlineFontFamily</item>
         <item name="android:textColor">?androidprv:attr/textColorPrimary</item>
         <item name="android:textSize">@dimen/magnification_setting_text_size</item>
         <item name="android:lineHeight">@dimen/magnification_setting_button_line_height</item>

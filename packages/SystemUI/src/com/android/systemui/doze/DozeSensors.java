@@ -48,6 +48,7 @@ import com.android.internal.R;
 import com.android.internal.logging.UiEvent;
 import com.android.internal.logging.UiEventLogger;
 import com.android.internal.logging.UiEventLoggerImpl;
+import com.android.systemui.Flags;
 import com.android.systemui.biometrics.AuthController;
 import com.android.systemui.plugins.SensorManagerPlugin;
 import com.android.systemui.statusbar.phone.DozeParameters;
@@ -107,7 +108,6 @@ public class DozeSensors {
     @VisibleForTesting
     protected TriggerSensor[] mTriggerSensors;
     private final ProximitySensor mProximitySensor;
-    private final boolean mProxSensorSupported;
 
     // Sensor callbacks
     private final Callback mSensorCallback; // receives callbacks on registered sensor events
@@ -172,8 +172,6 @@ public class DozeSensors {
         mSelectivelyRegisterProxSensors = dozeParameters.getSelectivelyRegisterSensorsUsingProx();
         mListeningProxSensors = !mSelectivelyRegisterProxSensors;
         mSelectedUserInteractor = selectedUserInteractor;
-        mProxSensorSupported = resources.getBoolean(
-                com.android.systemui.R.bool.doze_proximity_sensor_supported);
         mScreenOffUdfpsEnabled =
                 config.screenOffUdfpsEnabled(mSelectedUserInteractor.getSelectedUserId());
         mDevicePostureController = devicePostureController;
@@ -202,7 +200,6 @@ public class DozeSensors {
                         false /* touchscreen */,
                         false /* ignoresSetting */,
                         false /* requires prox */,
-                        !dozeParameters.pickupEventNeedsProximityCheck() /* performsProxCheck */,
                         true /* immediatelyReRegister */,
                         false /* requiresAod */
                 ),
@@ -212,6 +209,7 @@ public class DozeSensors {
                         true /* configured */,
                         DozeLog.REASON_SENSOR_DOUBLE_TAP,
                         dozeParameters.doubleTapReportsTouchCoordinates(),
+                        true /* touchscreen */,
                         !dozeParameters.doubleTapNeedsProximityCheck() /* performsProxCheck */
                 ),
                 new TriggerSensor(
@@ -224,7 +222,6 @@ public class DozeSensors {
                         true /* touchscreen */,
                         false /* ignoresSetting */,
                         dozeParameters.singleTapUsesProx(mDevicePosture) /* requiresProx */,
-                        !dozeParameters.singleTapNeedsProximityCheck() /* performsProxCheck */,
                         true /* immediatelyReRegister */,
                         mDevicePosture,
                         false
@@ -239,6 +236,7 @@ public class DozeSensors {
                         true /* touchscreen */,
                         false /* ignoresSetting */,
                         dozeParameters.longPressUsesProx() /* requiresProx */,
+                        !dozeParameters.longPressNeedsProximityCheck() /* performsProxCheck */,
                         true /* immediatelyReRegister */,
                         false /* requiresAod */
                 ),
@@ -252,6 +250,7 @@ public class DozeSensors {
                         true /* touchscreen */,
                         false /* ignoresSetting */,
                         dozeParameters.longPressUsesProx(),
+                        !dozeParameters.longPressNeedsProximityCheck() /* performsProxCheck */,
                         false /* immediatelyReRegister */,
                         !mScreenOffUdfpsEnabled /* requiresAod */
                 ),
@@ -260,7 +259,7 @@ public class DozeSensors {
                         Settings.Secure.DOZE_WAKE_DISPLAY_GESTURE,
                         mConfig.wakeScreenGestureAvailable()
                           && mConfig.alwaysOnEnabled(
-                                  mSelectedUserInteractor.getSelectedUserId(true)),
+                                  mSelectedUserInteractor.getSelectedUserId()),
                         DozeLog.REASON_SENSOR_WAKE_UP_PRESENCE,
                         false /* reports touch coordinates */,
                         false /* touchscreen */
@@ -288,21 +287,22 @@ public class DozeSensors {
                         false /* requiresAod */
                 ),
         };
-        if (!mProxSensorSupported) return;
-        setProxListening(false);  // Don't immediately start listening when we register.
-        mProximitySensor.register(
-                proximityEvent -> {
-                    if (proximityEvent != null) {
-                        mProxCallback.accept(!proximityEvent.getBelow());
-                    }
-                });
+        if (resources.getBoolean(com.android.systemui.res.R.bool.doze_proximity_sensor_supported)) {
+            setProxListening(false);  // Don't immediately start listening when we register.
+            mProximitySensor.register(
+                    proximityEvent -> {
+                        if (proximityEvent != null) {
+                            mProxCallback.accept(!proximityEvent.getBelow());
+                        }
+                    });
+        }
 
         mDevicePostureController.addCallback(mDevicePostureCallback);
     }
 
     private boolean udfpsLongPressConfigured() {
         return mUdfpsEnrolled
-                && (mConfig.alwaysOnEnabled(mSelectedUserInteractor.getSelectedUserId(true))
+                && (mConfig.alwaysOnEnabled(mSelectedUserInteractor.getSelectedUserId())
                 || mScreenOffUdfpsEnabled);
     }
 
@@ -432,7 +432,11 @@ public class DozeSensors {
         }
 
         if (!anyListening) {
-            mSecureSettings.unregisterContentObserverSync(mSettingsObserver);
+            if (Flags.registerContentObserversAsync()) {
+                mSecureSettings.unregisterContentObserverAsync(mSettingsObserver);
+            } else {
+                mSecureSettings.unregisterContentObserverSync(mSettingsObserver);
+            }
         } else if (!mSettingRegistered) {
             for (TriggerSensor s : mTriggerSensors) {
                 s.registerSettingsObserver(mSettingsObserver);
@@ -478,7 +482,7 @@ public class DozeSensors {
     private final ContentObserver mSettingsObserver = new ContentObserver(mHandler) {
         @Override
         public void onChange(boolean selfChange, Collection<Uri> uris, int flags, int userId) {
-            if (userId != mSelectedUserInteractor.getSelectedUserId(true)) {
+            if (userId != mSelectedUserInteractor.getSelectedUserId()) {
                 return;
             }
             for (TriggerSensor s : mTriggerSensors) {
@@ -511,7 +515,6 @@ public class DozeSensors {
         for (TriggerSensor s : mTriggerSensors) {
             idpw.println("Sensor: " + s.toString());
         }
-        if (!mProxSensorSupported) return;
         idpw.println("ProxSensor: " + mProximitySensor.toString());
     }
 
@@ -519,7 +522,7 @@ public class DozeSensors {
      * @return true if prox is currently near, false if far or null if unknown.
      */
     public Boolean isProximityCurrentlyNear() {
-        return mProxSensorSupported ? mProximitySensor.isNear() : null;
+        return mProximitySensor.isNear();
     }
 
     @VisibleForTesting
@@ -706,8 +709,8 @@ public class DozeSensors {
             mRequiresTouchscreen = requiresTouchscreen;
             mIgnoresSetting = ignoresSetting;
             mRequiresProx = requiresProx;
-            mRequiresAod = requiresAod;
             mPerformsProxCheck = performsProxCheck;
+            mRequiresAod = requiresAod;
             mPosture = posture;
             mImmediatelyReRegister = immediatelyReRegister;
         }
@@ -791,13 +794,13 @@ public class DozeSensors {
         }
 
         protected boolean enabledBySetting() {
-            if (!mConfig.enabled(mSelectedUserInteractor.getSelectedUserId(true))) {
+            if (!mConfig.enabled(mSelectedUserInteractor.getSelectedUserId())) {
                 return false;
             } else if (TextUtils.isEmpty(mSetting)) {
                 return true;
             }
             return mSecureSettings.getIntForUser(mSetting, mSettingDefault ? 1 : 0,
-                    mSelectedUserInteractor.getSelectedUserId(true)) != 0;
+                    mSelectedUserInteractor.getSelectedUserId()) != 0;
         }
 
         @Override
@@ -853,8 +856,13 @@ public class DozeSensors {
 
         public void registerSettingsObserver(ContentObserver settingsObserver) {
             if (mConfigured && !TextUtils.isEmpty(mSetting)) {
-                mSecureSettings.registerContentObserverForUserSync(
-                        mSetting, mSettingsObserver, UserHandle.USER_ALL);
+                if (Flags.registerContentObserversAsync()) {
+                    mSecureSettings.registerContentObserverForUserAsync(
+                            mSetting, mSettingsObserver, UserHandle.USER_ALL);
+                } else {
+                    mSecureSettings.registerContentObserverForUserSync(
+                            mSetting, mSettingsObserver, UserHandle.USER_ALL);
+                }
             }
         }
 

@@ -310,20 +310,19 @@ constructor(@KeyguardUpdateMonitorLog private val logBuffer: LogBuffer) {
         )
     }
 
-    fun logServiceStateChange(subId: Int, slotId: Int, serviceState: ServiceState?) {
+    fun logServiceStateChange(subId: Int, serviceState: ServiceState?) {
         logBuffer.log(
             TAG,
             DEBUG,
             {
                 int1 = subId
-                int2 = slotId
                 str1 = "$serviceState"
             },
-            { "handleServiceStateChange(subId=$int1, slotId=$int2, serviceState=$str1)" }
+            { "handleServiceStateChange(subId=$int1, serviceState=$str1)" }
         )
     }
 
-    fun logServiceStateIntent(action: String?, serviceState: ServiceState?, subId: Int, slotId: Int) {
+    fun logServiceStateIntent(action: String?, serviceState: ServiceState?, subId: Int) {
         logBuffer.log(
             TAG,
             VERBOSE,
@@ -331,9 +330,8 @@ constructor(@KeyguardUpdateMonitorLog private val logBuffer: LogBuffer) {
                 str1 = action
                 str2 = "$serviceState"
                 int1 = subId
-                int2 = slotId
             },
-            { "action $str1 serviceState=$str2 subId=$int1 slotId=$int2" }
+            { "action $str1 serviceState=$str2 subId=$int1" }
         )
     }
 
@@ -393,6 +391,7 @@ constructor(@KeyguardUpdateMonitorLog private val logBuffer: LogBuffer) {
             { "handleTimeFormatUpdate timeFormat=$str1" }
         )
     }
+
     fun logUdfpsPointerDown(sensorId: Int) {
         logBuffer.log(TAG, DEBUG, { int1 = sensorId }, { "onUdfpsPointerDown, sensorId: $int1" })
     }
@@ -641,12 +640,45 @@ constructor(@KeyguardUpdateMonitorLog private val logBuffer: LogBuffer) {
             { "fingerprint acquire message: $int1" }
         )
     }
+
     fun logForceIsDismissibleKeyguard(keepUnlocked: Boolean) {
         logBuffer.log(
-                TAG,
-                DEBUG,
-                { bool1 = keepUnlocked },
-                { "keepUnlockedOnFold changed to: $bool1" }
+            TAG,
+            DEBUG,
+            { bool1 = keepUnlocked },
+            { "keepUnlockedOnFold changed to: $bool1" }
+        )
+    }
+
+    fun logUserUnlocked(userId: Int) {
+        logBuffer.log(TAG, DEBUG, { int1 = userId }, { "userUnlocked userId: $int1" })
+    }
+
+    fun logUserStopped(userId: Int, isUnlocked: Boolean) {
+        logBuffer.log(
+            TAG,
+            DEBUG,
+            {
+                int1 = userId
+                bool1 = isUnlocked
+            },
+            { "userStopped userId: $int1 isUnlocked: $bool1" }
+        )
+    }
+
+    fun logUserRemoved(userId: Int) {
+        logBuffer.log(TAG, DEBUG, { int1 = userId }, { "userRemoved userId: $int1" })
+    }
+
+    fun logUserUnlockedInitialState(userId: Int, isUnlocked: Boolean) {
+        logBuffer.log(
+            TAG,
+            DEBUG,
+            {
+                int1 = userId
+                bool1 = isUnlocked
+            },
+            { "userUnlockedInitialState userId: $int1 isUnlocked: $bool1" }
         )
     }
 }

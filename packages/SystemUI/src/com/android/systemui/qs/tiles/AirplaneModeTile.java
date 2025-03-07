@@ -55,9 +55,8 @@ import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.res.R;
 import com.android.systemui.settings.UserTracker;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.util.settings.GlobalSettings;
-
-import com.qti.extphone.ExtTelephonyManager;
 
 import dagger.Lazy;
 
@@ -66,10 +65,9 @@ import kotlinx.coroutines.Job;
 import javax.inject.Inject;
 
 /** Quick settings tile: Airplane mode **/
-public class AirplaneModeTile extends QSTileImpl<BooleanState> {
+public class AirplaneModeTile extends SecureQSTile<BooleanState> {
 
     public static final String TILE_SPEC = "airplane";
-
     private final SettingObserver mSetting;
     private final BroadcastDispatcher mBroadcastDispatcher;
     private final Lazy<ConnectivityManager> mLazyConnectivityManager;
@@ -93,10 +91,11 @@ public class AirplaneModeTile extends QSTileImpl<BooleanState> {
             BroadcastDispatcher broadcastDispatcher,
             Lazy<ConnectivityManager> lazyConnectivityManager,
             GlobalSettings globalSettings,
-            UserTracker userTracker
+            UserTracker userTracker,
+            KeyguardStateController keyguardStateController
     ) {
         super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
-                statusBarStateController, activityStarter, qsLogger);
+                statusBarStateController, activityStarter, qsLogger, keyguardStateController);
         mBroadcastDispatcher = broadcastDispatcher;
         mLazyConnectivityManager = lazyConnectivityManager;
 
@@ -115,16 +114,16 @@ public class AirplaneModeTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    public void handleClick(@Nullable Expandable expandable) {
+    protected void handleClick(@Nullable Expandable expandable, boolean keyguardShowing) {
+        if (checkKeyguard(expandable, keyguardShowing)) {
+            return;
+        }
+
         boolean airplaneModeEnabled = mState.value;
         MetricsLogger.action(mContext, getMetricsCategory(), !airplaneModeEnabled);
         if (!airplaneModeEnabled && TelephonyProperties.in_ecm_mode().orElse(false)) {
             mActivityStarter.postStartActivityDismissingKeyguard(
                     new Intent(TelephonyManager.ACTION_SHOW_NOTICE_ECM_BLOCK_OTHERS), 0);
-            return;
-        } else if(!airplaneModeEnabled && TelephonyProperties.in_scbm().orElse(false)) {
-            mActivityStarter.postStartActivityDismissingKeyguard(
-                    new Intent(ExtTelephonyManager.ACTION_SHOW_NOTICE_SCM_BLOCK_OTHERS), 0);
             return;
         }
 

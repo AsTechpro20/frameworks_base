@@ -12,12 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
-
 package com.android.systemui.statusbar.connectivity;
 
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
@@ -31,11 +26,9 @@ import android.content.Intent;
 import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.text.Html;
-import android.net.wifi.ScanResult;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.Preconditions;
-import com.android.settingslib.AccessibilityContentDescriptions;
 import com.android.settingslib.SignalIcon.IconGroup;
 import com.android.settingslib.SignalIcon.MobileIconGroup;
 import com.android.settingslib.graph.SignalDrawable;
@@ -56,12 +49,6 @@ public class WifiSignalController extends SignalController<WifiState, IconGroup>
     private final WifiManager mWifiManager;
 
     private final Handler mBgHandler;
-
-    private final IconGroup mDefaultWifiIconGroup;
-    private final IconGroup mWifi4IconGroup;
-    private final IconGroup mWifi5IconGroup;
-    private final IconGroup mWifi6IconGroup;
-    private final IconGroup mWifi7IconGroup;
 
     public WifiSignalController(
             Context context,
@@ -86,68 +73,7 @@ public class WifiSignalController extends SignalController<WifiState, IconGroup>
             wifiManager.registerTrafficStateCallback(context.getMainExecutor(),
                     new WifiTrafficStateCallback());
         }
-
-        mDefaultWifiIconGroup = new IconGroup(
-                "Wi-Fi Icons",
-                WifiIcons.WIFI_SIGNAL_STRENGTH,
-                WifiIcons.QS_WIFI_SIGNAL_STRENGTH,
-                AccessibilityContentDescriptions.WIFI_CONNECTION_STRENGTH,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                AccessibilityContentDescriptions.WIFI_NO_CONNECTION
-                );
-
-        mWifi4IconGroup = new IconGroup(
-                "Wi-Fi 4 Icons",
-                WifiIcons.WIFI_4_SIGNAL_STRENGTH,
-                WifiIcons.QS_WIFI_4_SIGNAL_STRENGTH,
-                AccessibilityContentDescriptions.WIFI_CONNECTION_STRENGTH,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                AccessibilityContentDescriptions.WIFI_NO_CONNECTION
-                );
-
-        mWifi5IconGroup = new IconGroup(
-                "Wi-Fi 5 Icons",
-                WifiIcons.WIFI_5_SIGNAL_STRENGTH,
-                WifiIcons.QS_WIFI_5_SIGNAL_STRENGTH,
-                AccessibilityContentDescriptions.WIFI_CONNECTION_STRENGTH,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                AccessibilityContentDescriptions.WIFI_NO_CONNECTION
-                );
-
-        mWifi6IconGroup = new IconGroup(
-                "Wi-Fi 6 Icons",
-                WifiIcons.WIFI_6_SIGNAL_STRENGTH,
-                WifiIcons.QS_WIFI_6_SIGNAL_STRENGTH,
-                AccessibilityContentDescriptions.WIFI_CONNECTION_STRENGTH,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                AccessibilityContentDescriptions.WIFI_NO_CONNECTION
-                );
-
-        mWifi7IconGroup = new IconGroup(
-                "Wi-Fi 7 Icons",
-                WifiIcons.WIFI_7_SIGNAL_STRENGTH,
-                WifiIcons.QS_WIFI_7_SIGNAL_STRENGTH,
-                AccessibilityContentDescriptions.WIFI_CONNECTION_STRENGTH,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                WifiIcons.WIFI_NO_NETWORK,
-                WifiIcons.QS_WIFI_NO_NETWORK,
-                AccessibilityContentDescriptions.WIFI_NO_CONNECTION
-                );
-
-        mCurrentState.iconGroup = mLastState.iconGroup = mDefaultWifiIconGroup;
+        mCurrentState.iconGroup = mLastState.iconGroup = mUnmergedWifiIconGroup;
     }
 
     @Override
@@ -216,8 +142,6 @@ public class WifiSignalController extends SignalController<WifiState, IconGroup>
                 new IconState(sbVisible, getCurrentIconIdForCarrierWifi(), contentDescription);
         int typeIcon = sbVisible ? icons.dataType : 0;
         int qsTypeIcon = 0;
-        // TODO(b/178561525) Populate volteIcon value as necessary
-        int volteIcon = 0;
         IconState qsIcon = null;
         if (sbVisible) {
             qsTypeIcon = icons.dataType;
@@ -228,8 +152,8 @@ public class WifiSignalController extends SignalController<WifiState, IconGroup>
                 mNetworkController.getNetworkNameForCarrierWiFi(mCurrentState.subId);
         MobileDataIndicators mobileDataIndicators = new MobileDataIndicators(
                 statusIcon, qsIcon, typeIcon, qsTypeIcon,
-                mCurrentState.activityIn, mCurrentState.activityOut, volteIcon,
-                dataContentDescription, dataContentDescriptionHtml, description,
+                mCurrentState.activityIn, mCurrentState.activityOut, dataContentDescription,
+                dataContentDescriptionHtml, description,
                 mCurrentState.subId, /* roaming= */ false, /* showTriangle= */ true,
                 /* isDefault= */ qsIcon != null
         );
@@ -258,21 +182,6 @@ public class WifiSignalController extends SignalController<WifiState, IconGroup>
         return getCurrentIconIdForCarrierWifi();
     }
 
-
-    private void updateIconGroup() {
-	if (mCurrentState.wifiStandard == ScanResult.WIFI_STANDARD_11N) {
-            mCurrentState.iconGroup = mWifi4IconGroup;
-        } else if (mCurrentState.wifiStandard == ScanResult.WIFI_STANDARD_11AC) {
-            mCurrentState.iconGroup = mWifi5IconGroup;
-        } else if (mCurrentState.wifiStandard == ScanResult.WIFI_STANDARD_11AX) {
-            mCurrentState.iconGroup = mWifi6IconGroup;
-        } else if (mCurrentState.wifiStandard == ScanResult.WIFI_STANDARD_11BE) {
-            mCurrentState.iconGroup = mWifi7IconGroup;
-        } else {
-            mCurrentState.iconGroup = mDefaultWifiIconGroup;
-        }
-
-    }
     /**
      * Fetches wifi initial state replacing the initial sticky broadcast.
      */
@@ -325,8 +234,9 @@ public class WifiSignalController extends SignalController<WifiState, IconGroup>
         mCurrentState.statusLabel = mWifiTracker.statusLabel;
         mCurrentState.isCarrierMerged = mWifiTracker.isCarrierMerged;
         mCurrentState.subId = mWifiTracker.subId;
-        mCurrentState.wifiStandard = mWifiTracker.wifiStandard;
-        updateIconGroup();
+        mCurrentState.iconGroup =
+                mCurrentState.isCarrierMerged ? mCarrierMergedWifiIconGroup
+                        : mUnmergedWifiIconGroup;
     }
 
     boolean isCarrierMergedWifi(int subId) {

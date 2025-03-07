@@ -16,7 +16,6 @@
 
 package com.android.systemui.authentication.domain.interactor
 
-import android.app.admin.flags.Flags
 import android.os.UserHandle
 import com.android.internal.widget.LockPatternUtils
 import com.android.internal.widget.LockPatternView
@@ -87,6 +86,9 @@ constructor(
      * proceed.
      */
     val authenticationMethod: Flow<AuthenticationMethodModel> = repository.authenticationMethod
+
+    /** The current pattern size. */
+    val patternSize: StateFlow<Byte> = repository.patternSize
 
     /**
      * Whether the auto confirm feature is enabled for the currently-selected user.
@@ -289,12 +291,7 @@ constructor(
     private suspend fun getWipeTarget(): WipeTarget {
         // Check which profile has the strictest policy for failed authentication attempts.
         val userToBeWiped = repository.getProfileWithMinFailedUnlockAttemptsForWipe()
-        val primaryUser =
-            if (Flags.headlessSingleUserFixes()) {
-                selectedUserInteractor.getMainUserId() ?: UserHandle.USER_SYSTEM
-            } else {
-                UserHandle.USER_SYSTEM
-            }
+        val primaryUser = selectedUserInteractor.getMainUserId() ?: UserHandle.USER_SYSTEM
         return when (userToBeWiped) {
             selectedUserInteractor.getSelectedUserId() ->
                 if (userToBeWiped == primaryUser) {
@@ -319,7 +316,8 @@ constructor(
                 LockscreenCredential.createPattern(
                     input
                         .map { it as AuthenticationPatternCoordinate }
-                        .map { LockPatternView.Cell.of(it.y, it.x) }
+                        .map { LockPatternView.Cell.of(it.y, it.x, patternSize.value) },
+                    patternSize.value
                 )
             else -> null
         }

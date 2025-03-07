@@ -52,7 +52,6 @@
     <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.REGISTER_WINDOW_MANAGER_LISTENERS" />
-    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE" />
 
     <application android:debuggable="true" android:largeHeap="true" android:testOnly="true"
             android:enableOnBackInvokedCallback="true" >

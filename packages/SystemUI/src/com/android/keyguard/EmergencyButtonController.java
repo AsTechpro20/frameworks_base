@@ -17,6 +17,7 @@
 package com.android.keyguard;
 
 import static com.android.systemui.DejankUtils.whitelistIpcs;
+import static com.android.systemui.Flags.msdlFeedback;
 
 import android.annotation.SuppressLint;
 import android.app.ActivityOptions;
@@ -28,9 +29,6 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.os.UserHandle;
 import android.telecom.TelecomManager;
-import android.telephony.CellInfo;
-import android.telephony.ServiceState;
-import android.telephony.SubscriptionManager;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -42,7 +40,6 @@ import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.dagger.KeyguardBouncerScope;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
-import com.android.systemui.res.R;
 import com.android.systemui.shade.ShadeController;
 import com.android.systemui.statusbar.policy.ConfigurationController;
 import com.android.systemui.statusbar.policy.ConfigurationController.ConfigurationListener;
@@ -50,8 +47,10 @@ import com.android.systemui.user.domain.interactor.SelectedUserInteractor;
 import com.android.systemui.util.EmergencyDialerConstants;
 import com.android.systemui.util.ViewController;
 
+import com.google.android.msdl.data.model.MSDLToken;
+import com.google.android.msdl.domain.MSDLPlayer;
+
 import java.util.concurrent.Executor;
-import java.util.HashMap;
 
 import javax.inject.Inject;
 
@@ -67,12 +66,12 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
     private final TelecomManager mTelecomManager;
     private final MetricsLogger mMetricsLogger;
 
+    private EmergencyButtonCallback mEmergencyButtonCallback;
     private final LockPatternUtils mLockPatternUtils;
     private final Executor mMainExecutor;
     private final Executor mBackgroundExecutor;
     private final SelectedUserInteractor mSelectedUserInteractor;
-
-    private EmergencyButtonCallback mEmergencyButtonCallback;
+    private final MSDLPlayer mMSDLPlayer;
 
     private final KeyguardUpdateMonitorCallback mInfoCallback =
             new KeyguardUpdateMonitorCallback() {
@@ -83,11 +82,6 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
 
         @Override
         public void onPhoneStateChanged(int phoneState) {
-            updateEmergencyCallButton();
-        }
-
-        @Override
-        public void onServiceStateChanged(int subId, ServiceState state) {
             updateEmergencyCallButton();
         }
     };
@@ -110,7 +104,8 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
             MetricsLogger metricsLogger,
             LockPatternUtils lockPatternUtils,
             Executor mainExecutor, Executor backgroundExecutor,
-            SelectedUserInteractor selectedUserInteractor) {
+            SelectedUserInteractor selectedUserInteractor,
+            MSDLPlayer msdlPlayer) {
         super(view);
         mConfigurationController = configurationController;
         mKeyguardUpdateMonitor = keyguardUpdateMonitor;
@@ -123,6 +118,7 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
         mMainExecutor = mainExecutor;
         mBackgroundExecutor = backgroundExecutor;
         mSelectedUserInteractor = selectedUserInteractor;
+        mMSDLPlayer = msdlPlayer;
     }
 
     @Override
@@ -162,8 +158,7 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
                         /* hasTelephonyRadio= */ getContext().getPackageManager()
                                 .hasSystemFeature(PackageManager.FEATURE_TELEPHONY),
                         /* simLocked= */ mKeyguardUpdateMonitor.isSimPinVoiceSecure(),
-                        /* isSecure= */ isSecure,
-                        isEmergencyCapable()));
+                        /* isSecure= */ isSecure));
             });
         }
     }
@@ -177,6 +172,9 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
     @SuppressLint("MissingPermission")
     public void takeEmergencyCallAction() {
         mMetricsLogger.action(MetricsEvent.ACTION_EMERGENCY_CALL);
+        if (msdlFeedback()) {
+            mMSDLPlayer.playToken(MSDLToken.KEYPRESS_RETURN, null);
+        }
         if (mPowerManager != null) {
             mPowerManager.userActivity(SystemClock.uptimeMillis(), true);
         }
@@ -213,24 +211,6 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
         });
     }
 
-    private boolean isEmergencyCapable() {
-        int slotCount = mKeyguardUpdateMonitor.getActiveSlots();
-        Log.d(TAG, "isEmergencyCapable slotCount:" + slotCount);
-        for (int slotId = 0; slotId < slotCount; slotId++) {
-            ServiceState ss = mKeyguardUpdateMonitor.getServiceStateWithSlotid(slotId);
-            Log.d(TAG, "mServiceStates list slotid:" + slotId + ";;ss:" + ss);
-            if (ss != null) {
-                if (ss.isEmergencyOnly()) {
-                    return true;
-                } else if ((ss.getVoiceRegState() != ServiceState.STATE_OUT_OF_SERVICE)
-                        && (ss.getVoiceRegState() != ServiceState.STATE_POWER_OFF)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
     /** */
     public interface EmergencyButtonCallback {
         /** */
@@ -251,6 +231,7 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
         private final Executor mMainExecutor;
         private final Executor mBackgroundExecutor;
         private final SelectedUserInteractor mSelectedUserInteractor;
+        private final MSDLPlayer mMSDLPlayer;
 
         @Inject
         public Factory(ConfigurationController configurationController,
@@ -263,7 +244,8 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
                 LockPatternUtils lockPatternUtils,
                 @Main Executor mainExecutor,
                 @Background Executor backgroundExecutor,
-                SelectedUserInteractor selectedUserInteractor) {
+                SelectedUserInteractor selectedUserInteractor,
+                MSDLPlayer msdlPlayer) {
 
             mConfigurationController = configurationController;
             mKeyguardUpdateMonitor = keyguardUpdateMonitor;
@@ -276,6 +258,7 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
             mMainExecutor = mainExecutor;
             mBackgroundExecutor = backgroundExecutor;
             mSelectedUserInteractor = selectedUserInteractor;
+            mMSDLPlayer = msdlPlayer;
         }
 
         /** Construct an {@link com.android.keyguard.EmergencyButtonController}. */
@@ -283,7 +266,7 @@ public class EmergencyButtonController extends ViewController<EmergencyButton> {
             return new EmergencyButtonController(view, mConfigurationController,
                     mKeyguardUpdateMonitor, mPowerManager, mActivityTaskManager, mShadeController,
                     mTelecomManager, mMetricsLogger, mLockPatternUtils, mMainExecutor,
-                    mBackgroundExecutor, mSelectedUserInteractor);
+                    mBackgroundExecutor, mSelectedUserInteractor, mMSDLPlayer);
         }
     }
 }

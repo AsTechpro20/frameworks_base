@@ -14,17 +14,10 @@
  * limitations under the License.
  */
 
-/*
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.systemui.statusbar.pipeline.mobile.domain.interactor
 
 import com.android.settingslib.mobile.TelephonyIcons
 import com.android.systemui.log.table.TableLogBuffer
-import com.android.systemui.statusbar.pipeline.mobile.data.model.MobileIconCustomizationMode
 import com.android.systemui.statusbar.pipeline.mobile.data.model.NetworkNameModel
 import com.android.systemui.statusbar.pipeline.mobile.domain.model.NetworkTypeIconModel
 import com.android.systemui.statusbar.pipeline.mobile.domain.model.SignalIconModel
@@ -76,37 +69,6 @@ class FakeMobileIconInteractor(
 
     override val isForceHidden = MutableStateFlow(false)
 
-    private val _alwaysUseRsrpLevelForLte = MutableStateFlow(false)
-    override val alwaysUseRsrpLevelForLte = _alwaysUseRsrpLevelForLte
-
-    private val _hideNoInternetState = MutableStateFlow(false)
-    override val hideNoInternetState = _hideNoInternetState
-
-    private val _networkTypeIconCustomization = MutableStateFlow(MobileIconCustomizationMode())
-    override val networkTypeIconCustomization = _networkTypeIconCustomization
-
-    private val _showVolteIcon = MutableStateFlow(false)
-    override val showVolteIcon = _showVolteIcon
-
-    private val _imsInfo = MutableStateFlow(MobileIconCustomizationMode())
-    override val imsInfo = _imsInfo
-
-    private val _showVowifiIcon = MutableStateFlow(false)
-    override val showVowifiIcon = _showVowifiIcon
-
-    private val _voWifiAvailable = MutableStateFlow(false)
-    override val voWifiAvailable = _voWifiAvailable
-
-    private val _customizedIcon = MutableStateFlow(null)
-    override val customizedIcon = _customizedIcon
-
-    override val customizedNetworkName = MutableStateFlow(NetworkNameModel.IntentDerived("demo mode"))
-
-    override val customizedCarrierName = MutableStateFlow("demo mode")
-
-    private val _isConnectionFailed = MutableStateFlow(false)
-    override val isConnectionFailed = _isConnectionFailed
-
     override val isAllowedDuringAirplaneMode = MutableStateFlow(false)
 
     override val signalLevelIcon: MutableStateFlow<SignalIconModel> =
@@ -121,13 +83,5 @@ class FakeMobileIconInteractor(
 
     fun setIsDataEnabled(enabled: Boolean) {
         _isDataEnabled.value = enabled
-    }
-
-    fun setAlwaysUseRsrpLevelForLte(alwaysUseRsrpLevelForLte: Boolean) {
-        _alwaysUseRsrpLevelForLte.value = alwaysUseRsrpLevelForLte
-    }
-
-    fun setHideNoInternetState(hideNoInternetState: Boolean) {
-        _hideNoInternetState.value = hideNoInternetState
     }
 }

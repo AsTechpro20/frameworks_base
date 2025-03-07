@@ -77,42 +77,39 @@ constructor(
 
     // This adds a 10 seconds delay before showing the icon
     private val shouldShowIconForOosAfterHysteresis: StateFlow<Boolean> =
-        if (interactor.isOpportunisticSatelliteIconEnabled) {
-                interactor.areAllConnectionsOutOfService
-                    .flatMapLatest { shouldShow ->
-                        if (shouldShow) {
-                            logBuffer.log(
-                                TAG,
-                                LogLevel.INFO,
-                                { long1 = DELAY_DURATION.inWholeSeconds },
-                                { "Waiting $long1 seconds before showing the satellite icon" },
-                            )
-                            delay(DELAY_DURATION)
-                            flowOf(true)
-                        } else {
-                            flowOf(false)
-                        }
-                    }
-                    .distinctUntilChanged()
-                    .logDiffsForTable(
-                        tableLog,
-                        columnPrefix = "vm",
-                        columnName = COL_VISIBLE_FOR_OOS,
-                        initialValue = false,
+        interactor.areAllConnectionsOutOfService
+            .flatMapLatest { shouldShow ->
+                if (shouldShow) {
+                    logBuffer.log(
+                        TAG,
+                        LogLevel.INFO,
+                        { long1 = DELAY_DURATION.inWholeSeconds },
+                        { "Waiting $long1 seconds before showing the satellite icon" }
                     )
-            } else {
-                flowOf(false)
+                    delay(DELAY_DURATION)
+                    flowOf(true)
+                } else {
+                    flowOf(false)
+                }
             }
+            .distinctUntilChanged()
+            .logDiffsForTable(
+                tableLog,
+                columnPrefix = "vm",
+                columnName = COL_VISIBLE_FOR_OOS,
+                initialValue = false,
+            )
             .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
-   private val canShowIcon =
-        combine(interactor.isSatelliteAllowed, interactor.isSatelliteProvisioned) {
-            allowed,
-            provisioned ->
+    private val canShowIcon =
+        combine(
+            interactor.isSatelliteAllowed,
+            interactor.isSatelliteProvisioned,
+        ) { allowed, provisioned ->
             allowed && provisioned
         }
 
-   private val showIcon =
+    private val showIcon =
         canShowIcon
             .flatMapLatest { canShow ->
                 if (!canShow) {
@@ -144,10 +141,11 @@ constructor(
             .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
     override val icon: StateFlow<Icon?> =
-        combine(showIcon, interactor.connectionState, interactor.signalStrength) {
-                shouldShow,
-                state,
-                signalStrength ->
+        combine(
+                showIcon,
+                interactor.connectionState,
+                interactor.signalStrength,
+            ) { shouldShow, state, signalStrength ->
                 if (shouldShow) {
                     SatelliteIconModel.fromConnectionState(state, signalStrength)
                 } else {
@@ -157,7 +155,10 @@ constructor(
             .stateIn(scope, SharingStarted.WhileSubscribed(), null)
 
     override val carrierText: StateFlow<String?> =
-        combine(showIcon, interactor.connectionState) { shouldShow, connectionState ->
+        combine(
+                showIcon,
+                interactor.connectionState,
+            ) { shouldShow, connectionState ->
                 logBuffer.log(
                     TAG,
                     LogLevel.INFO,
@@ -165,7 +166,7 @@ constructor(
                         bool1 = shouldShow
                         str1 = connectionState.name
                     },
-                    { "Updating carrier text. shouldShow=$bool1 connectionState=$str1" },
+                    { "Updating carrier text. shouldShow=$bool1 connectionState=$str1" }
                 )
                 if (shouldShow) {
                     when (connectionState) {

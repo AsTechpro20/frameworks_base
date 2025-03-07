@@ -103,7 +103,7 @@ class ShadeCarrierGroupMobileIconViewModel(
         verboseLogger = null,
     ) {
     private val isSingleCarrier = interactor.isSingleCarrier
-    val carrierName = interactor.customizedCarrierName
+    val carrierName = interactor.carrierName
 
     override val isVisible: StateFlow<Boolean> =
         combine(super.isVisible, isSingleCarrier) { isVisible, isSingleCarrier ->

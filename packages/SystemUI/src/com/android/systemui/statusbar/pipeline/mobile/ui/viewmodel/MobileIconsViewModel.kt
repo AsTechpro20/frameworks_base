@@ -16,7 +16,7 @@
 
 package com.android.systemui.statusbar.pipeline.mobile.ui.viewmodel
 
-import android.telephony.SubscriptionManager
+import com.android.app.tracing.coroutines.createCoroutineTracingContext
 import androidx.annotation.VisibleForTesting
 import com.android.systemui.dagger.SysUISingleton
 import com.android.systemui.dagger.qualifiers.Application
@@ -26,15 +26,14 @@ import com.android.systemui.statusbar.pipeline.airplane.domain.interactor.Airpla
 import com.android.systemui.statusbar.pipeline.mobile.domain.interactor.MobileIconsInteractor
 import com.android.systemui.statusbar.pipeline.mobile.ui.MobileViewLogger
 import com.android.systemui.statusbar.pipeline.mobile.ui.VerboseMobileViewLogger
-import com.android.systemui.statusbar.pipeline.mobile.domain.model.SignalIconModel
 import com.android.systemui.statusbar.pipeline.mobile.ui.view.ModernStatusBarMobileView
 import com.android.systemui.statusbar.pipeline.shared.ConnectivityConstants
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -72,21 +71,6 @@ constructor(
             }
             .stateIn(scope, SharingStarted.WhileSubscribed(), listOf())
 
-    private val ddsIcon: StateFlow<SignalIconModel?> =
-        combine(interactor.defaultDataSubId, subscriptionIdsFlow) {
-                defaultDataSubId, subscriptionIdsFlow ->
-                if (defaultDataSubId > SubscriptionManager.INVALID_SUBSCRIPTION_ID
-                    && subscriptionIdsFlow.contains(defaultDataSubId)) {
-                    commonViewModelForSub(defaultDataSubId)
-                } else {
-                    null
-                }
-            }
-            .flatMapLatest { viewModel ->
-                viewModel?.icon ?: flowOf(null)
-            }
-            .stateIn(scope, SharingStarted.WhileSubscribed(), null)
-
     private val firstMobileSubViewModel: StateFlow<MobileIconViewModelCommon?> =
         subscriptionIdsFlow
             .map {
@@ -112,7 +96,6 @@ constructor(
             .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
     init {
-        interactor.setDdsIconFLow(ddsIcon)
         scope.launch { subscriptionIdsFlow.collect { invalidateCaches(it) } }
     }
 
@@ -133,7 +116,7 @@ constructor(
 
     private fun createViewModel(subId: Int): Pair<MobileIconViewModel, CoroutineScope> {
         // Create a child scope so we can cancel it
-        val vmScope = scope.createChildScope()
+        val vmScope = scope.createChildScope(createCoroutineTracingContext("MobileIconViewModel"))
         val vm =
             MobileIconViewModel(
                 subId,
@@ -147,8 +130,8 @@ constructor(
         return Pair(vm, vmScope)
     }
 
-    private fun CoroutineScope.createChildScope() =
-        CoroutineScope(coroutineContext + Job(coroutineContext[Job]))
+    private fun CoroutineScope.createChildScope(extraContext: CoroutineContext) =
+        CoroutineScope(coroutineContext + Job(coroutineContext[Job]) + extraContext)
 
     private fun invalidateCaches(subIds: List<Int>) {
         reuseCache.keys

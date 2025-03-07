@@ -19,10 +19,13 @@ package com.android.systemui.keyguard.ui.view
 import android.content.Context
 import android.graphics.drawable.AnimatedStateListDrawable
 import android.graphics.drawable.AnimatedVectorDrawable
+import android.os.UserHandle
+import android.provider.Settings
 import android.util.AttributeSet
 import android.util.StateSet
 import android.view.Gravity
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
@@ -30,8 +33,13 @@ import android.widget.ImageView
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
+import com.android.systemui.Dependency
+import com.android.systemui.biometrics.UdfpsFpIconDrawable
+import com.android.systemui.biometrics.UdfpsIconDrawable
 import com.android.systemui.common.ui.view.LongPressHandlingView
+import com.android.systemui.log.LongPressHandlingViewLogger
 import com.android.systemui.res.R
+import com.android.systemui.tuner.TunerService
 
 class DeviceEntryIconView
 @JvmOverloads
@@ -39,14 +47,33 @@ constructor(
     context: Context,
     attrs: AttributeSet?,
     defStyleAttrs: Int = 0,
-) : FrameLayout(context, attrs, defStyleAttrs) {
-    val longPressHandlingView: LongPressHandlingView = LongPressHandlingView(context, attrs)
+    logger: LongPressHandlingViewLogger? = null,
+    tunerService: TunerService,
+) : FrameLayout(context, attrs, defStyleAttrs), TunerService.Tunable {
+
+    val longPressHandlingView: LongPressHandlingView =
+        LongPressHandlingView(
+            context = context,
+            attrs = attrs,
+            longPressDuration = { ViewConfiguration.getLongPressTimeout().toLong() },
+            allowedTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop(),
+            logger = logger,
+        )
     val iconView: ImageView = ImageView(context, attrs).apply { id = R.id.device_entry_icon_fg }
     val bgView: ImageView = ImageView(context, attrs).apply { id = R.id.device_entry_icon_bg }
     val aodFpDrawable: LottieDrawable = LottieDrawable()
     var accessibilityHintType: AccessibilityHintType = AccessibilityHintType.NONE
 
     private var animatedIconDrawable: AnimatedStateListDrawable = AnimatedStateListDrawable()
+
+    private final val UDFPS_ICON: String =
+            "system:" + Settings.System.UDFPS_ICON
+
+    private val fingerprintDrawable: UdfpsIconDrawable = UdfpsFpIconDrawable(context)
+
+    private val packageInstalled = com.android.internal.util.infinity.InfinityUtils.isPackageInstalled(
+        context, "com.infinity.udfps.icons"
+    )
 
     init {
         setupIconStates()
@@ -58,6 +85,21 @@ constructor(
         addBgImageView()
         addIconImageView()
         addLongpressHandlingView()
+
+        tunerService.addTunable(this, UDFPS_ICON)
+    }
+
+    override fun onTuningChanged(key: String?, value: String?) {
+        when (key) {
+            UDFPS_ICON -> {
+                iconView.setImageDrawable(null)
+                animatedIconDrawable = AnimatedStateListDrawable()
+                setupIconStates()
+                setupIconTransitions()
+                iconView.setImageDrawable(animatedIconDrawable) 
+            }
+            else -> return
+        }
     }
 
     private fun setupAccessibilityDelegate() {
@@ -95,6 +137,10 @@ constructor(
      * - Drawable properties can be updated using ImageView properties like imageTintList.
      */
     private fun setupIconStates() {
+        val customUdfpsIcon = packageInstalled && (Settings.System.getIntForUser(
+            mContext.contentResolver, Settings.System.UDFPS_ICON, 0, UserHandle.USER_CURRENT
+        ) != 0)
+
         // Lockscreen States
         // LOCK
         animatedIconDrawable.addState(
@@ -109,11 +155,20 @@ constructor(
             R.id.unlocked,
         )
         // FINGERPRINT
-        animatedIconDrawable.addState(
-            getIconState(IconType.FINGERPRINT, false),
-            context.getDrawable(R.drawable.ic_fingerprint)!!,
-            R.id.locked_fp,
-        )
+        if (customUdfpsIcon) {
+            fingerprintDrawable.setBounds(0, 0, bgView.width, bgView.height)
+            animatedIconDrawable.addState(
+                getIconState(IconType.FINGERPRINT, false),
+                fingerprintDrawable,
+                R.id.locked_fp
+            )
+        } else {
+            animatedIconDrawable.addState(
+                getIconState(IconType.FINGERPRINT, false),
+                context.getDrawable(R.drawable.ic_fingerprint)!!,
+                R.id.locked_fp
+            )
+        }
 
         // AOD states
         // LOCK
@@ -230,7 +285,7 @@ constructor(
     }
 
     private fun addIconImageView() {
-        iconView.scaleType = ImageView.ScaleType.CENTER_CROP
+        iconView.scaleType = ImageView.ScaleType.FIT_CENTER
         iconView.setImageDrawable(animatedIconDrawable)
         addView(iconView)
         val lp = iconView.layoutParams as LayoutParams
@@ -247,6 +302,7 @@ constructor(
         lp.height = ViewGroup.LayoutParams.MATCH_PARENT
         lp.width = ViewGroup.LayoutParams.MATCH_PARENT
         bgView.layoutParams = lp
+        bgView.alpha = 0f
     }
 
     fun getIconState(icon: IconType, aod: Boolean): IntArray {

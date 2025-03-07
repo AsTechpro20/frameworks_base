@@ -17,7 +17,6 @@
 package com.android.keyguard;
 
 import android.content.Context;
-import com.android.systemui.Dependency;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
@@ -26,9 +25,6 @@ import android.view.ViewConfiguration;
 import android.widget.Button;
 
 import com.android.internal.util.EmergencyAffordanceManager;
-import com.android.systemui.res.R;
-
-import java.util.List;
 
 /**
  * This class implements a smart emergency button that updates itself based
@@ -99,8 +95,8 @@ public class EmergencyButton extends Button {
         return super.performLongClick();
     }
 
-    public void updateEmergencyCallButton(boolean isInCall, boolean hasTelephonyRadio, boolean simLocked,
-            boolean isSecure, boolean isEmergencyCapable) {
+    void updateEmergencyCallButton(boolean isInCall, boolean hasTelephonyRadio, boolean simLocked,
+            boolean isSecure) {
         boolean visible = false;
         if (hasTelephonyRadio) {
             // Emergency calling requires a telephony radio.
@@ -112,12 +108,7 @@ public class EmergencyButton extends Button {
                     visible = mEnableEmergencyCallWhileSimLocked;
                 } else {
                     // Only show if there is a secure screen (pin/pattern/SIM pin/SIM puk);
-                    visible = isSecure
-                        || mContext.getResources().getBoolean(com.android.settingslib.R.bool.config_showEmergencyButton);
-                }
-
-                if (mContext.getResources().getBoolean(com.android.settingslib.R.bool.kg_hide_emgcy_btn_when_oos)) {
-                    visible = visible && isEmergencyCapable;
+                    visible = isSecure;
                 }
             }
         }

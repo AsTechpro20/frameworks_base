@@ -49,13 +49,16 @@ import com.android.systemui.statusbar.notification.stack.AmbientState;
 import com.android.systemui.statusbar.notification.stack.NotificationSectionsManager;
 import com.android.systemui.statusbar.phone.LightBarController;
 import com.android.systemui.statusbar.phone.ScreenOffAnimationController;
-import com.android.systemui.statusbar.phone.StatusBarContentInsetsProvider;
 import com.android.systemui.statusbar.phone.SystemUIDialogManager;
 import com.android.systemui.statusbar.policy.BluetoothController;
 import com.android.systemui.statusbar.policy.DeviceProvisionedController;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.statusbar.window.StatusBarWindowController;
-import com.android.systemui.tuner.TunablePadding.TunablePaddingService;
+import com.android.systemui.statusbar.policy.TaskHelper;
 import com.android.systemui.tuner.TunerService;
+
+import com.android.systemui.qs.QSImpl;
+import com.android.systemui.statusbar.phone.ScrimController;
 
 import dagger.Lazy;
 
@@ -119,6 +122,8 @@ public class Dependency {
 
     @Inject Lazy<BroadcastDispatcher> mBroadcastDispatcher;
     @Inject Lazy<BluetoothController> mBluetoothController;
+    @Inject Lazy<KeyguardStateController> mKeyguardStateController;
+    @Inject Lazy<KeyguardStateController> mKeyguardMonitor;
     @Inject Lazy<KeyguardUpdateMonitor> mKeyguardUpdateMonitor;
     @Inject Lazy<DeviceProvisionedController> mDeviceProvisionedController;
     @Inject Lazy<PluginManager> mPluginManager;
@@ -129,7 +134,6 @@ public class Dependency {
     @Nullable
     @Inject Lazy<VolumeDialogController> mVolumeDialogController;
     @Inject Lazy<MetricsLogger> mMetricsLogger;
-    @Inject Lazy<TunablePaddingService> mTunablePaddingService;
     @Inject Lazy<UiOffloadThread> mUiOffloadThread;
     @Inject Lazy<LightBarController> mLightBarController;
     @Inject Lazy<OverviewProxyService> mOverviewProxyService;
@@ -142,7 +146,6 @@ public class Dependency {
     @Inject Lazy<SysUiState> mSysUiStateFlagsContainer;
     @Inject Lazy<CommandQueue> mCommandQueue;
     @Inject Lazy<UiEventLogger> mUiEventLogger;
-    @Inject Lazy<StatusBarContentInsetsProvider> mContentInsetsProviderLazy;
     @Inject Lazy<FeatureFlags> mFeatureFlagsLazy;
     @Inject Lazy<NotificationSectionsManager> mNotificationSectionsManagerLazy;
     @Inject Lazy<ScreenOffAnimationController> mScreenOffAnimationController;
@@ -153,6 +156,9 @@ public class Dependency {
     @Inject Lazy<DialogTransitionAnimator> mDialogTransitionAnimatorLazy;
     @Inject Lazy<UserTracker> mUserTrackerLazy;
     @Inject Lazy<StatusBarWindowController> mStatusBarWindowControllerLazy;
+    @Inject Lazy<QSImpl> mQSImpl;
+    @Inject Lazy<ScrimController> mScrimController;
+    @Inject Lazy<TaskHelper> mTaskHelper;
 
     @Inject
     public Dependency() {
@@ -168,6 +174,8 @@ public class Dependency {
         mProviders.put(BG_LOOPER, mBgLooper::get);
         mProviders.put(BroadcastDispatcher.class, mBroadcastDispatcher::get);
         mProviders.put(BluetoothController.class, mBluetoothController::get);
+        mProviders.put(KeyguardStateController.class, mKeyguardMonitor::get);
+        mProviders.put(KeyguardStateController.class, mKeyguardStateController::get);
         mProviders.put(KeyguardUpdateMonitor.class, mKeyguardUpdateMonitor::get);
         mProviders.put(DeviceProvisionedController.class, mDeviceProvisionedController::get);
         mProviders.put(PluginManager.class, mPluginManager::get);
@@ -177,7 +185,6 @@ public class Dependency {
         mProviders.put(FragmentService.class, mFragmentService::get);
         mProviders.put(VolumeDialogController.class, mVolumeDialogController::get);
         mProviders.put(MetricsLogger.class, mMetricsLogger::get);
-        mProviders.put(TunablePaddingService.class, mTunablePaddingService::get);
         mProviders.put(UiOffloadThread.class, mUiOffloadThread::get);
         mProviders.put(LightBarController.class, mLightBarController::get);
         mProviders.put(OverviewProxyService.class, mOverviewProxyService::get);
@@ -187,9 +194,10 @@ public class Dependency {
         mProviders.put(NotificationMediaManager.class, mNotificationMediaManager::get);
         mProviders.put(SysUiState.class, mSysUiStateFlagsContainer::get);
         mProviders.put(CommandQueue.class, mCommandQueue::get);
+        mProviders.put(TaskHelper.class, mTaskHelper::get);
+
         mProviders.put(UiEventLogger.class, mUiEventLogger::get);
         mProviders.put(FeatureFlags.class, mFeatureFlagsLazy::get);
-        mProviders.put(StatusBarContentInsetsProvider.class, mContentInsetsProviderLazy::get);
         mProviders.put(NotificationSectionsManager.class, mNotificationSectionsManagerLazy::get);
         mProviders.put(ScreenOffAnimationController.class, mScreenOffAnimationController::get);
         mProviders.put(AmbientState.class, mAmbientStateLazy::get);
@@ -199,6 +207,8 @@ public class Dependency {
         mProviders.put(DialogTransitionAnimator.class, mDialogTransitionAnimatorLazy::get);
         mProviders.put(UserTracker.class, mUserTrackerLazy::get);
         mProviders.put(StatusBarWindowController.class, mStatusBarWindowControllerLazy::get);
+        mProviders.put(QSImpl.class, mQSImpl::get);
+        mProviders.put(ScrimController.class, mScrimController::get);
 
         Dependency.setInstance(this);
     }

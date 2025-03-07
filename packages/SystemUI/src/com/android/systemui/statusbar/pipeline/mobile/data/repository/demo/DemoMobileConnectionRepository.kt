@@ -14,16 +14,9 @@
  * limitations under the License.
  */
 
-/*
- * Changes from Qualcomm Innovation Center are provided under the following license:
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
-
 package com.android.systemui.statusbar.pipeline.mobile.data.repository.demo
 
 import android.telephony.CellSignalStrength
-import android.telephony.ims.stub.ImsRegistrationImplBase.REGISTRATION_TECH_NONE
 import android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID
 import android.telephony.TelephonyManager
 import com.android.systemui.log.table.TableLogBuffer
@@ -48,7 +41,6 @@ import com.android.systemui.statusbar.pipeline.mobile.data.repository.prod.FullM
 import com.android.systemui.statusbar.pipeline.shared.data.model.DataActivityModel
 import com.android.systemui.statusbar.pipeline.shared.data.model.toMobileDataActivityModel
 import com.android.systemui.statusbar.pipeline.wifi.data.repository.demo.model.FakeWifiEventModel
-import com.qti.extphone.NrIconType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -234,20 +226,6 @@ class DemoMobileConnectionRepository(
 
     override val carrierName =
         MutableStateFlow(NetworkNameModel.SubscriptionDerived(DEMO_CARRIER_NAME))
-
-    override val lteRsrpLevel = MutableStateFlow(CellSignalStrength.SIGNAL_STRENGTH_NONE_OR_UNKNOWN)
-    override val voiceNetworkType = MutableStateFlow(TelephonyManager.NETWORK_TYPE_UNKNOWN)
-    override val dataNetworkType = MutableStateFlow(TelephonyManager.NETWORK_TYPE_UNKNOWN)
-    override val nrIconType = MutableStateFlow(NrIconType.TYPE_NONE)
-    override val is6Rx = MutableStateFlow(false)
-    override val dataRoamingEnabled = MutableStateFlow(true)
-    override val originNetworkType = MutableStateFlow(TelephonyManager.NETWORK_TYPE_UNKNOWN)
-    override val voiceCapable = MutableStateFlow(false)
-    override val videoCapable = MutableStateFlow(false)
-    override val imsRegistered = MutableStateFlow(false)
-    override val imsRegistrationTech = MutableStateFlow(REGISTRATION_TECH_NONE)
-    override val isConnectionFailed = MutableStateFlow(false)
-    override val ciwlanAvailable = MutableStateFlow(false)
 
     override val isAllowedDuringAirplaneMode = MutableStateFlow(false)
 

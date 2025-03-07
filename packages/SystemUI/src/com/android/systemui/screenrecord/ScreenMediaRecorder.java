@@ -48,6 +48,7 @@ import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.Size;
@@ -74,10 +75,13 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
     private static final int TOTAL_NUM_TRACKS = 1;
     private static final int VIDEO_FRAME_RATE = 30;
     private static final int VIDEO_FRAME_RATE_TO_RESOLUTION_RATIO = 6;
+    private static final int LOW_VIDEO_FRAME_RATE = 25;
+    private static final int LOW_VIDEO_BIT_RATE = 1750000;
     private static final int AUDIO_BIT_RATE = 196000;
     private static final int AUDIO_SAMPLE_RATE = 44100;
     private static final int MAX_DURATION_MS = 60 * 60 * 1000;
     private static final long MAX_FILESIZE_BYTES = 5000000000L;
+    private static final long MAX_FILESIZE_BYTES_LONGER = 16106100000L; // 15 GiB
     private static final String TAG = "ScreenMediaRecorder";
 
 
@@ -93,6 +97,12 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
     private ScreenRecordingAudioSource mAudioSource;
     private final MediaProjectionCaptureTarget mCaptureRegion;
     private final Handler mHandler;
+    private int mMaxRefreshRate;
+    private String mAvcProfileLevel;
+
+    private boolean mLowQuality;
+    private boolean mLongerDuration;
+    private boolean mHEVC;
 
     private Context mContext;
     ScreenMediaRecorderListener mListener;
@@ -107,6 +117,22 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
         mCaptureRegion = captureRegion;
         mListener = listener;
         mAudioSource = audioSource;
+        mMaxRefreshRate = mContext.getResources().getInteger(
+                com.android.systemui.res.R.integer.config_screenRecorderMaxFramerate);
+        mAvcProfileLevel = mContext.getResources().getString(
+                com.android.systemui.res.R.string.config_screenRecorderAVCProfileLevel);
+    }
+
+    public void setLowQuality(boolean low) {
+        mLowQuality = low;
+    }
+
+    public void setLongerDuration(boolean longer) {
+        mLongerDuration = longer;
+    }
+
+    public void setHEVC(boolean hevc) {
+        mHEVC = hevc;
     }
 
     private void prepare() throws IOException, RemoteException, RuntimeException {
@@ -145,22 +171,38 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
         DisplayMetrics metrics = new DisplayMetrics();
         WindowManager wm = (WindowManager) mContext.getSystemService(Context.WINDOW_SERVICE);
         wm.getDefaultDisplay().getRealMetrics(metrics);
-        int refreshRate = (int) wm.getDefaultDisplay().getRefreshRate();
+        int refreshRate = mLowQuality ? LOW_VIDEO_FRAME_RATE :
+                (int) wm.getDefaultDisplay().getRefreshRate();
+        if (mMaxRefreshRate != 0 && refreshRate > mMaxRefreshRate) refreshRate = mMaxRefreshRate;
         int[] dimens = getSupportedSize(metrics.widthPixels, metrics.heightPixels, refreshRate);
         int width = dimens[0];
         int height = dimens[1];
         refreshRate = dimens[2];
-        int vidBitRate = width * height * refreshRate / VIDEO_FRAME_RATE
+        int vidBitRate = mLowQuality ? LOW_VIDEO_BIT_RATE :
+                width * height * refreshRate / VIDEO_FRAME_RATE
                 * VIDEO_FRAME_RATE_TO_RESOLUTION_RATIO;
-        mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-        mMediaRecorder.setVideoEncodingProfileLevel(
-                MediaCodecInfo.CodecProfileLevel.AVCProfileHigh,
-                MediaCodecInfo.CodecProfileLevel.AVCLevel3);
+        boolean unlimit = Settings.System.getInt(
+                mContext.getContentResolver(),
+                Settings.System.UNLIMIT_SCREENRECORD, 0) != 0;
+        long maxFilesize = mLongerDuration ? MAX_FILESIZE_BYTES_LONGER : MAX_FILESIZE_BYTES;                 
+        if (!mHEVC) {
+            mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            mMediaRecorder.setVideoEncodingProfileLevel(
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileMain,
+                    mLowQuality ? MediaCodecInfo.CodecProfileLevel.AVCLevel32
+                    : getAvcProfileLevelCodeByName(mAvcProfileLevel));
+        } else {
+            mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.HEVC);
+            mMediaRecorder.setVideoEncodingProfileLevel(
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain,
+                    mLowQuality ? MediaCodecInfo.CodecProfileLevel.HEVCHighTierLevel31
+                    : MediaCodecInfo.CodecProfileLevel.HEVCHighTierLevel41);
+        }
         mMediaRecorder.setVideoSize(width, height);
         mMediaRecorder.setVideoFrameRate(refreshRate);
         mMediaRecorder.setVideoEncodingBitRate(vidBitRate);
-        mMediaRecorder.setMaxDuration(MAX_DURATION_MS);
-        mMediaRecorder.setMaxFileSize(MAX_FILESIZE_BYTES);
+        mMediaRecorder.setMaxDuration(mLongerDuration ? 0 : MAX_DURATION_MS);
+        mMediaRecorder.setMaxFileSize(unlimit ? 0 : maxFilesize);
 
         // Set up audio
         if (mAudioSource == MIC) {
@@ -201,6 +243,21 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
     }
 
     /**
+     * Match human-readable AVC level name to its constant value.
+     */
+    private int getAvcProfileLevelCodeByName(final String levelName) {
+        switch (levelName) {
+            case "3": return MediaCodecInfo.CodecProfileLevel.AVCLevel3;
+            case "3.1": return MediaCodecInfo.CodecProfileLevel.AVCLevel31;
+            case "3.2": return MediaCodecInfo.CodecProfileLevel.AVCLevel32;
+            case "4": return MediaCodecInfo.CodecProfileLevel.AVCLevel4;
+            case "4.1": return MediaCodecInfo.CodecProfileLevel.AVCLevel41;
+            default:
+            case "4.2": return MediaCodecInfo.CodecProfileLevel.AVCLevel42;
+        }
+    }
+
+    /**
      * Find the highest supported screen resolution and refresh rate for the given dimensions on
      * this device, up to actual size and given rate.
      * If possible this will return the same values as given, but values may be smaller on some
@@ -215,13 +272,11 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
             throws IOException {
         String videoType = MediaFormat.MIMETYPE_VIDEO_AVC;
 
-        // Get max size from the encoder,
-        // implicitly decoder supports this size and
-        // ensure recordings will be playable on device
-        MediaCodec encoder = MediaCodec.createEncoderByType(videoType);
-        MediaCodecInfo.VideoCapabilities vc = encoder.getCodecInfo()
+        // Get max size from the decoder, to ensure recordings will be playable on device
+        MediaCodec decoder = MediaCodec.createDecoderByType(videoType);
+        MediaCodecInfo.VideoCapabilities vc = decoder.getCodecInfo()
                 .getCapabilitiesForType(videoType).getVideoCapabilities();
-        encoder.release();
+        decoder.release();
 
         // Check if we can support screen size as-is
         int width = vc.getSupportedWidths().getUpper();

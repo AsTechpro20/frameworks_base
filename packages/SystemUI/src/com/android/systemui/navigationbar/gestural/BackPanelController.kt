@@ -33,6 +33,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.os.postDelayed
 import androidx.core.view.isVisible
 import androidx.dynamicanimation.animation.DynamicAnimation
+import com.android.app.viewcapture.ViewCaptureAwareWindowManager
 import com.android.internal.jank.Cuj
 import com.android.internal.jank.InteractionJankMonitor
 import com.android.internal.util.LatencyTracker
@@ -83,7 +84,7 @@ private const val DEBUG = false
 class BackPanelController
 internal constructor(
     context: Context,
-    private val windowManager: WindowManager,
+    private val windowManager: ViewCaptureAwareWindowManager,
     private val viewConfiguration: ViewConfiguration,
     private val mainHandler: Handler,
     private val systemClock: SystemClock,
@@ -102,7 +103,7 @@ internal constructor(
     class Factory
     @Inject
     constructor(
-        private val windowManager: WindowManager,
+        private val windowManager: ViewCaptureAwareWindowManager,
         private val viewConfiguration: ViewConfiguration,
         @BackPanelUiThread private val uiThreadContext: UiThreadContext,
         private val systemClock: SystemClock,
@@ -184,6 +185,12 @@ internal constructor(
     private var minFlingDistance = 0
 
     internal val failsafeRunnable = Runnable { onFailsafe() }
+
+    private var isExtendedSwipe = false
+    private var longSwipeThreshold = 0f
+    private var wasAlmostLongSwipe = false
+
+    private var backArrowVisibility = false
 
     internal enum class GestureState {
         /* Arrow is off the screen and invisible */
@@ -291,6 +298,10 @@ internal constructor(
 
     override fun onViewDetached() {
         configurationController.removeCallback(configurationListener)
+    }
+
+    override fun setLongSwipeEnabled(enabled: Boolean) {
+        isExtendedSwipe = enabled
     }
 
     override fun onMotionEvent(event: MotionEvent) {
@@ -469,6 +480,8 @@ internal constructor(
         // How far in the x direction we are from the original touch ignoring motion that
         // occurs between the screen edge and the touch start.
         val xTranslation = max(0f, if (mView.isLeftPanel) x - startX else startX - x)
+        val touchTranslation = MathUtils.abs(x - startX);
+        val almostLongSwipe = isExtendedSwipe && (touchTranslation > longSwipeThreshold)
 
         // Compared to last time, how far we moved in the x direction. If <0, we are moving closer
         // to the edge. If >0, we are moving further from the edge
@@ -497,7 +510,16 @@ internal constructor(
         }
 
         updateArrowStateOnMove(yTranslation, xTranslation)
-
+        mView.setDrawDoubleArrow(almostLongSwipe)
+        if (wasAlmostLongSwipe != almostLongSwipe) {
+            wasAlmostLongSwipe = almostLongSwipe
+            if (almostLongSwipe) { 
+                performActivatedHapticFeedback()
+            } else { 
+                performDeactivatedHapticFeedback()
+            }
+        }
+    
         val gestureProgress =
             when (currentState) {
                 GestureState.ACTIVE -> fullScreenProgress(xTranslation)
@@ -671,6 +693,10 @@ internal constructor(
         this.layoutParams = layoutParams
         windowManager.addView(mView, layoutParams)
     }
+    
+    override fun setBackArrowVisibility(enabled: Boolean) {
+        backArrowVisibility = enabled
+    }
 
     private fun isFlungAwayFromEdge(endX: Float, startX: Float = touchDeltaStartX): Boolean {
         val flingDistance = if (mView.isLeftPanel) endX - startX else startX - endX
@@ -730,6 +756,7 @@ internal constructor(
     override fun setDisplaySize(displaySize: Point) {
         this.displaySize.set(displaySize.x, displaySize.y)
         fullyStretchedThreshold = min(displaySize.x.toFloat(), params.swipeProgressThreshold)
+        longSwipeThreshold = displaySize.x * 0.45f;
     }
 
     /** Updates resting arrow and background size not accounting for stretch */
@@ -925,7 +952,7 @@ internal constructor(
                 mView.isVisible = false
             }
             GestureState.ENTRY -> {
-                mView.isVisible = true
+                mView.isVisible = if (backArrowVisibility) true else false
 
                 updateRestingArrowDimens()
                 gestureEntryTime = systemClock.uptimeMillis()
@@ -933,7 +960,7 @@ internal constructor(
             GestureState.ACTIVE -> {
                 previousXTranslationOnActiveOffset = previousXTranslation
                 updateRestingArrowDimens()
-                performActivatedHapticFeedback()
+//                performActivatedHapticFeedback()
                 val popVelocity =
                     if (previousState == GestureState.INACTIVE) {
                         POP_ON_INACTIVE_TO_ACTIVE_VELOCITY
@@ -954,7 +981,7 @@ internal constructor(
 
                 mView.popOffEdge(POP_ON_INACTIVE_VELOCITY)
 
-                performDeactivatedHapticFeedback()
+//                performDeactivatedHapticFeedback()
                 updateRestingArrowDimens()
             }
             GestureState.FLUNG -> {
@@ -962,7 +989,7 @@ internal constructor(
                 // are instances where a fling to trigger back occurs while not in that state.
                 // (e.g. A fling is detected before crossing the trigger threshold.)
                 if (previousState != GestureState.ACTIVE) {
-                    performActivatedHapticFeedback()
+//                    performActivatedHapticFeedback()
                 }
                 mainHandler.postDelayed(POP_ON_FLING_DELAY) {
                     mView.popScale(POP_ON_FLING_VELOCITY)
@@ -992,6 +1019,11 @@ internal constructor(
                         MIN_DURATION_COMMITTED_ANIMATION
                     )
                 }
+
+//                vibratorHelper.cancel()
+//                    mainHandler.postDelayed(10L) {
+//                        vibratorHelper.vibrate(VIBRATE_ACTIVATED_EFFECT)
+//                    }
             }
             GestureState.CANCELLED -> {
                 val delay = max(0, MIN_DURATION_CANCELLED_ANIMATION - elapsedTimeSinceEntry)

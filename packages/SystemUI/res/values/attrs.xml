@@ -46,6 +46,7 @@
             <enum name="small" value="1" />
             <enum name="gone" value="2" />
         </attr>
+        <attr name="isStatusBar" format="boolean" />
         <attr name="showDark" format="boolean" />
     </declare-styleable>
     <attr name="orientation">
@@ -93,6 +94,7 @@
 
     <declare-styleable name="StatusBarWindowView_Layout">
         <attr name="ignoreRightInset" format="boolean" />
+        <attr name="ignoreLeftInset" format="boolean" />
     </declare-styleable>
 
     <declare-styleable name="AnimatedImageView">

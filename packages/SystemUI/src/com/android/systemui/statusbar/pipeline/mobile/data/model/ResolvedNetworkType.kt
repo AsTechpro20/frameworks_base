@@ -32,7 +32,6 @@ import com.android.systemui.statusbar.pipeline.mobile.util.MobileMappingsProxy
  */
 sealed interface ResolvedNetworkType : Diffable<ResolvedNetworkType> {
     val lookupKey: String
-    val networkType: Int
 
     override fun logDiffs(prevVal: ResolvedNetworkType, row: TableRowLogger) {
         if (prevVal != this) {
@@ -44,24 +43,20 @@ sealed interface ResolvedNetworkType : Diffable<ResolvedNetworkType> {
         override val lookupKey: String = MobileMappings.toIconKey(NETWORK_TYPE_UNKNOWN)
 
         override fun toString(): String = "Unknown"
-        override val networkType: Int = 0
     }
 
     data class DefaultNetworkType(
         override val lookupKey: String,
-        override val networkType: Int = 0,
     ) : ResolvedNetworkType
 
     data class OverrideNetworkType(
         override val lookupKey: String,
-        override val networkType: Int = 0,
     ) : ResolvedNetworkType
 
     /** Represents the carrier merged network. See [CarrierMergedConnectionRepository]. */
     object CarrierMergedNetworkType : ResolvedNetworkType {
         // Effectively unused since [iconGroupOverride] is used instead.
         override val lookupKey: String = "cwf"
-        override val networkType: Int = 0
 
         val iconGroupOverride: SignalIcon.MobileIconGroup = TelephonyIcons.CARRIER_MERGED_WIFI
 

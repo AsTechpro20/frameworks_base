@@ -66,6 +66,7 @@ import android.widget.FrameLayout;
 
 import androidx.annotation.VisibleForTesting;
 
+import com.android.app.viewcapture.ViewCaptureAwareWindowManager;
 import com.android.internal.util.Preconditions;
 import com.android.settingslib.Utils;
 import com.android.systemui.biometrics.data.repository.FacePropertyRepository;
@@ -122,9 +123,6 @@ public class ScreenDecorations implements
     private static final boolean DEBUG_SCREENSHOT_ROUNDED_CORNERS =
             SystemProperties.getBoolean("debug.screenshot_rounded_corners", false);
 
-    private static int mDisableRoundedCorner =
-            SystemProperties.getInt("vendor.display.disable_rounded_corner", 0);
-
     private static final boolean sToolkitSetFrameRateReadOnly =
             android.view.flags.Flags.toolkitSetFrameRateReadOnly();
     private boolean mDebug = DEBUG_SCREENSHOT_ROUNDED_CORNERS;
@@ -171,7 +169,7 @@ public class ScreenDecorations implements
     ViewGroup mScreenDecorHwcWindow;
     @VisibleForTesting
     ScreenDecorHwcLayer mScreenDecorHwcLayer;
-    private WindowManager mWindowManager;
+    private ViewCaptureAwareWindowManager mWindowManager;
     private int mRotation;
     private UserSettingObserver mColorInversionSetting;
     @Nullable
@@ -341,7 +339,8 @@ public class ScreenDecorations implements
             ScreenDecorationsLogger logger,
             FacePropertyRepository facePropertyRepository,
             JavaAdapter javaAdapter,
-            CameraProtectionLoader cameraProtectionLoader) {
+            CameraProtectionLoader cameraProtectionLoader,
+            ViewCaptureAwareWindowManager viewCaptureAwareWindowManager) {
         mContext = context;
         mSecureSettings = secureSettings;
         mCommandRegistry = commandRegistry;
@@ -356,6 +355,7 @@ public class ScreenDecorations implements
         mLogger = logger;
         mFacePropertyRepository = facePropertyRepository;
         mJavaAdapter = javaAdapter;
+        mWindowManager = viewCaptureAwareWindowManager;
     }
 
     private final ScreenDecorCommand.Callback mScreenDecorCommandCallback = (cmd, pw) -> {
@@ -487,7 +487,6 @@ public class ScreenDecorations implements
 
     private void startOnScreenDecorationsThread() {
         Trace.beginSection("ScreenDecorations#startOnScreenDecorationsThread");
-        mWindowManager = mContext.getSystemService(WindowManager.class);
         mContext.getDisplay().getDisplayInfo(mDisplayInfo);
         mRotation = mDisplayInfo.rotation;
         mDisplaySize.x = mDisplayInfo.getNaturalWidth();
@@ -647,8 +646,12 @@ public class ScreenDecorations implements
             List<DecorProvider> decorProviders = getProviders(mHwcScreenDecorationSupport != null);
             removeRedundantOverlayViews(decorProviders);
 
-            // Overlays are added in 2 steps: first the standard overlays. Then, if applicable, the
-            // HWC overlays. This ensures that the HWC overlays are always on top
+            if (mHwcScreenDecorationSupport != null) {
+                createHwcOverlay();
+            } else {
+                removeHwcOverlay();
+            }
+
             boolean[] hasCreatedOverlay = new boolean[BOUNDS_POSITION_LENGTH];
             final boolean shouldOptimizeVisibility = shouldOptimizeVisibility();
             Integer bound;
@@ -663,13 +666,6 @@ public class ScreenDecorations implements
                 if (!hasCreatedOverlay[i]) {
                     removeOverlay(i);
                 }
-            }
-
-            // Adding the HWC overlays second so they are on top by default
-            if (mHwcScreenDecorationSupport != null) {
-                createHwcOverlay();
-            } else {
-                removeHwcOverlay();
             }
 
             if (shouldOptimizeVisibility) {
@@ -1253,10 +1249,6 @@ public class ScreenDecorations implements
     }
 
     static boolean shouldDrawCutout(Context context) {
-        if (mDisableRoundedCorner == 1) {
-           return false;
-        }
-
         return DisplayCutout.getFillBuiltInDisplayCutout(
                 context.getResources(), context.getDisplay().getUniqueId());
     }

@@ -16,6 +16,7 @@
 
 package com.android.systemui.qs;
 
+import android.annotation.NonNull;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.util.AttributeSet;
@@ -27,28 +28,82 @@ import com.android.internal.logging.UiEventLogger;
 import com.android.systemui.FontSizeUtils;
 import com.android.systemui.plugins.qs.QSTile;
 import com.android.systemui.res.R;
+import com.android.systemui.Dependency;
+import com.android.systemui.qs.TileUtils;
+import com.android.systemui.qs.logging.QSLogger;
+import com.android.systemui.tuner.TunerService;
 
 /**
  * Version of QSPanel that only shows N Quick Tiles in the QS Header.
  */
-public class QuickQSPanel extends QSPanel {
+public class QuickQSPanel extends QSPanel implements TunerService.Tunable {
 
     private static final String TAG = "QuickQSPanel";
     // A fallback value for max tiles number when setting via Tuner (parseNumTiles)
     public static final int TUNER_MAX_TILES_FALLBACK = 6;
 
+    private QSLogger mQsLogger;
     private boolean mDisabledByPolicy;
     private int mMaxTiles;
 
     public QuickQSPanel(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mMaxTiles = getResources().getInteger(R.integer.quick_qs_panel_max_tiles);
+        setMaxTiles();
     }
 
     @Override
     protected void setHorizontalContentContainerClipping() {
         mHorizontalContentContainer.setClipToPadding(false);
         mHorizontalContentContainer.setClipChildren(false);
+    }
+
+
+    @Override
+    public void setBrightnessView(@NonNull View view) {
+        if (mBrightnessView != null) {
+            removeView(mBrightnessView);
+        }
+        mBrightnessView = view;
+        mAutoBrightnessView = view.findViewById(R.id.brightness_icon);
+        setBrightnessViewMargin(mTop);
+        if (mBrightnessView != null) {
+            addView(mBrightnessView);
+
+            TunerService tunerService = Dependency.get(TunerService.class);
+            if (tunerService.getValue(QS_SHOW_BRIGHTNESS_SLIDER, 2) > 1) {
+                mBrightnessView.setVisibility(VISIBLE);
+            }
+        }
+    }
+
+    View getBrightnessView() {
+        return mBrightnessView;
+    }
+
+    private void setBrightnessViewMargin(boolean top) {
+        if (mBrightnessView != null) {
+            MarginLayoutParams lp = (MarginLayoutParams) mBrightnessView.getLayoutParams();
+            if (top) {
+                lp.topMargin = mContext.getResources()
+                        .getDimensionPixelSize(R.dimen.qqs_top_brightness_margin_top);
+                lp.bottomMargin = mContext.getResources()
+                        .getDimensionPixelSize(R.dimen.qqs_top_brightness_margin_bottom);
+            } else {
+                lp.topMargin = mContext.getResources()
+                        .getDimensionPixelSize(R.dimen.qqs_bottom_brightness_margin_top);
+                lp.bottomMargin = mContext.getResources()
+                        .getDimensionPixelSize(R.dimen.qqs_bottom_brightness_margin_bottom);
+            }
+            mBrightnessView.setLayoutParams(lp);
+        }
+    }
+
+    void initialize(QSLogger qsLogger) {
+        mQsLogger = qsLogger;
+        super.initialize(mQsLogger, true);
+        if (mHorizontalContentContainer != null) {
+            mHorizontalContentContainer.setClipChildren(false);
+        }
     }
 
     @Override
@@ -77,6 +132,7 @@ public class QuickQSPanel extends QSPanel {
                 getPaddingTop(),
                 getPaddingEnd(),
                 bottomPadding);
+                setBrightnessViewMargin(mTop);
     }
 
     @Override
@@ -89,19 +145,53 @@ public class QuickQSPanel extends QSPanel {
         return !mExpanded;
     }
 
-    public void setMaxTiles(int maxTiles) {
-        mMaxTiles = maxTiles;
+    @Override
+    protected void onConfigurationChanged(Configuration newConfig) {
+        setMaxTiles();
+        super.onConfigurationChanged(newConfig);
+    }
+
+    public void setMaxTiles() {
+        int columns = TileUtils.getQSColumnsCount(mContext);
+        int maxTiles = columns * TileUtils.getQQSRowsCount(mContext);
+
+        while (maxTiles > columns && (maxTiles % columns != 0)) {
+            maxTiles--;
+        }
+
+        if (mMaxTiles != maxTiles) {
+            mMaxTiles = maxTiles;
+            requestLayout();
+        }
     }
 
     @Override
     public void onTuningChanged(String key, String newValue) {
-        if (QS_SHOW_BRIGHTNESS.equals(key)) {
-            // No Brightness or Tooltip for you!
-            super.onTuningChanged(key, "0");
-        }
+        switch (key) {
+            case QS_SHOW_BRIGHTNESS_SLIDER:
+                boolean value =
+                        TunerService.parseInteger(newValue, 2) > 1;
+                super.onTuningChanged(key, value ? newValue : "0");
+                break;
+            case QS_BRIGHTNESS_SLIDER_POSITION:
+                mTop = TunerService.parseInteger(newValue, 0) == 0;
+                updatePadding();
+                super.onTuningChanged(key, newValue);
+                break;
+            case QS_LAYOUT_COLUMNS:
+            case QS_LAYOUT_COLUMNS_LANDSCAPE:
+            case QQS_LAYOUT_ROWS:
+            case QQS_LAYOUT_ROWS_LANDSCAPE:
+                setMaxTiles();
+                super.onTuningChanged(key, newValue);
+                break;
+            default:
+                super.onTuningChanged(key, newValue);
+         }
     }
 
     public int getNumQuickTiles() {
+        setMaxTiles();
         return mMaxTiles;
     }
 
@@ -179,14 +269,13 @@ public class QuickQSPanel extends QSPanel {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,
                     LayoutParams.WRAP_CONTENT);
             setLayoutParams(lp);
-            setMaxColumns(4);
         }
 
         @Override
         public boolean updateResources() {
             mResourceCellHeightResId = R.dimen.qs_quick_tile_size;
             boolean b = super.updateResources();
-            mMaxAllowedRows = getResources().getInteger(R.integer.quick_qs_panel_max_rows);
+            mMaxAllowedRows = getResourceRows();
             return b;
         }
 
@@ -198,12 +287,6 @@ public class QuickQSPanel extends QSPanel {
             int padding = mContext.getResources().getDimensionPixelSize(R.dimen.qs_tile_padding);
             // the QQS only have 1 label
             mEstimatedCellHeight = mTempTextView.getMeasuredHeight() + padding * 2;
-        }
-
-        @Override
-        protected void onConfigurationChanged(Configuration newConfig) {
-            super.onConfigurationChanged(newConfig);
-            updateResources();
         }
 
         @Override
@@ -250,6 +333,11 @@ public class QuickQSPanel extends QSPanel {
             }
             setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
             mLastSelected = selected;
+        }
+
+        @Override
+        public int getResourceRows() {
+            return TileUtils.getQQSRowsCount(mContext);
         }
     }
 }

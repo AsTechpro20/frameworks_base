@@ -18,6 +18,7 @@ package com.android.systemui.statusbar.pipeline.satellite.data
 
 import android.telephony.TelephonyManager
 import android.telephony.satellite.SatelliteManager
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import com.android.systemui.SysuiTestCase
 import com.android.systemui.coroutines.collectLastValue
@@ -41,9 +42,11 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
 
 @SmallTest
+@RunWith(AndroidJUnit4::class)
 class DeviceBasedSatelliteRepositorySwitcherTest : SysuiTestCase() {
     private val testDispatcher = StandardTestDispatcher()
     private val testScope = TestScope(testDispatcher)
@@ -63,7 +66,6 @@ class DeviceBasedSatelliteRepositorySwitcherTest : SysuiTestCase() {
             logBuffer = FakeLogBuffer.Factory.create(),
             verboseLogBuffer = FakeLogBuffer.Factory.create(),
             systemClock,
-            context.resources,
         )
     private val demoDataSource =
         mock<DemoDeviceBasedSatelliteDataSource>().also {
@@ -78,11 +80,7 @@ class DeviceBasedSatelliteRepositorySwitcherTest : SysuiTestCase() {
                 )
         }
     private val demoImpl =
-        DemoDeviceBasedSatelliteRepository(
-            demoDataSource,
-            testScope.backgroundScope,
-            context.resources,
-        )
+        DemoDeviceBasedSatelliteRepository(demoDataSource, testScope.backgroundScope)
 
     private val underTest =
         DeviceBasedSatelliteRepositorySwitcher(

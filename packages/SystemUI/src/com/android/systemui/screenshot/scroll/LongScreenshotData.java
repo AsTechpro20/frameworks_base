@@ -16,8 +16,9 @@
 
 package com.android.systemui.screenshot.scroll;
 
+import android.graphics.Rect;
+
 import com.android.systemui.dagger.SysUISingleton;
-import com.android.systemui.screenshot.ScreenshotController;
 
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -30,9 +31,19 @@ import javax.inject.Inject;
 @SysUISingleton
 public class LongScreenshotData {
     private final AtomicReference<ScrollCaptureController.LongScreenshot> mLongScreenshot;
-    private final AtomicReference<ScreenshotController.TransitionDestination>
+    private final AtomicReference<TransitionDestination>
             mTransitionDestinationCallback;
     private String mForegroundAppName;
+    private boolean mNeedsMagnification;
+
+    public interface TransitionDestination {
+        /**
+         * Allows the long screenshot activity to call back with a destination location (the bounds
+         * on screen of the destination for the transitioning view) and a Runnable to be run once
+         * the transition animation is complete.
+         */
+        void setTransitionDestination(Rect transitionDestination, Runnable onTransitionEnd);
+    }
 
     @Inject
     public LongScreenshotData() {
@@ -64,15 +75,14 @@ public class LongScreenshotData {
     /**
      * Set the holder's TransitionDestination callback.
      */
-    public void setTransitionDestinationCallback(
-            ScreenshotController.TransitionDestination destination) {
+    public void setTransitionDestinationCallback(TransitionDestination destination) {
         mTransitionDestinationCallback.set(destination);
     }
 
     /**
      * Return the current TransitionDestination callback and clear.
      */
-    public ScreenshotController.TransitionDestination takeTransitionDestinationCallback() {
+    public TransitionDestination takeTransitionDestinationCallback() {
         return mTransitionDestinationCallback.getAndSet(null);
     }
 
@@ -88,5 +98,13 @@ public class LongScreenshotData {
      */
     public String getForegroundAppName() {
         return mForegroundAppName;
+    }
+
+    public void setNeedsMagnification(boolean status) {
+        mNeedsMagnification = status;
+    }
+
+    public boolean getNeedsMagnification() {
+        return mNeedsMagnification;
     }
 }

@@ -16,12 +16,9 @@
 
 package com.android.systemui.qs.tiles;
 
-import android.content.Context;
 import static com.android.systemui.util.PluralMessageFormaterKt.icuMessageFormat;
 
 import android.content.Intent;
-import android.net.wifi.ScanResult;
-import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.UserManager;
@@ -49,15 +46,12 @@ import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.res.R;
 import com.android.systemui.statusbar.policy.DataSaverController;
 import com.android.systemui.statusbar.policy.HotspotController;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 
 import javax.inject.Inject;
 
 /** Quick settings tile: Hotspot **/
-public class HotspotTile extends QSTileImpl<BooleanState> {
-
-    private final Icon mWifi4EnabledStatic = ResourceIcon.get(R.drawable.ic_wifi_4_hotspot);
-    private final Icon mWifi5EnabledStatic = ResourceIcon.get(R.drawable.ic_wifi_5_hotspot);
-    private final Icon mWifi6EnabledStatic = ResourceIcon.get(R.drawable.ic_wifi_6_hotspot);
+public class HotspotTile extends SecureQSTile<BooleanState> {
 
     public static final String TILE_SPEC = "hotspot";
     private final HotspotController mHotspotController;
@@ -65,7 +59,6 @@ public class HotspotTile extends QSTileImpl<BooleanState> {
 
     private final HotspotAndDataSaverCallbacks mCallbacks = new HotspotAndDataSaverCallbacks();
     private boolean mListening;
-    private WifiManager mWifiManager;
 
     @Inject
     public HotspotTile(
@@ -79,15 +72,15 @@ public class HotspotTile extends QSTileImpl<BooleanState> {
             ActivityStarter activityStarter,
             QSLogger qsLogger,
             HotspotController hotspotController,
-            DataSaverController dataSaverController
+            DataSaverController dataSaverController,
+            KeyguardStateController keyguardStateController
     ) {
         super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
-                statusBarStateController, activityStarter, qsLogger);
+                statusBarStateController, activityStarter, qsLogger, keyguardStateController);
         mHotspotController = hotspotController;
         mDataSaverController = dataSaverController;
         mHotspotController.observe(this, mCallbacks);
         mDataSaverController.observe(this, mCallbacks);
-        mWifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
     }
 
     @Override
@@ -121,7 +114,11 @@ public class HotspotTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    protected void handleClick(@Nullable Expandable expandable) {
+    protected void handleClick(@Nullable Expandable expandable, boolean keyguardShowing) {
+        if (checkKeyguard(expandable, keyguardShowing)) {
+            return;
+        }
+
         final boolean isEnabled = mState.value;
         if (!isEnabled && mDataSaverController.isDataSaverEnabled()) {
             return;

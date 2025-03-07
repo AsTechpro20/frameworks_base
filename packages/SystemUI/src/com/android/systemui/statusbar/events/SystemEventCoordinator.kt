@@ -169,3 +169,4 @@ constructor(
 
 private const val DEBOUNCE_TIME = 3000L
 private const val CHIP_ANIMATION_ENABLED = "privacy_chip_animation_enabled"
+private const val TAG = "SystemEventCoordinator"

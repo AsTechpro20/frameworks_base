@@ -46,7 +46,6 @@ import com.android.systemui.statusbar.notification.FakeShadowView;
 import com.android.systemui.statusbar.notification.NotificationUtils;
 import com.android.systemui.statusbar.notification.SourceType;
 import com.android.systemui.statusbar.notification.shared.NotificationHeadsUpCycling;
-import com.android.systemui.statusbar.notification.shared.NotificationIconContainerRefactor;
 import com.android.systemui.statusbar.notification.shared.NotificationsImprovedHunAnimation;
 import com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayout;
 import com.android.systemui.statusbar.notification.stack.StackStateAnimator;
@@ -126,7 +125,7 @@ public abstract class ActivatableNotificationView extends ExpandableOutlineView 
 
     private void updateColors() {
         mNormalColor = Utils.getColorAttrDefaultColor(mContext,
-                com.android.internal.R.attr.materialColorSurfaceContainerHigh);
+                com.android.internal.R.attr.colorSurface);
         mTintedRippleColor = mContext.getColor(
                 R.color.notification_ripple_tinted_color);
         mNormalRippleColor = mContext.getColor(
@@ -234,16 +233,6 @@ public abstract class ActivatableNotificationView extends ExpandableOutlineView 
         float alpha = NotificationStackScrollLayout.BACKGROUND_ALPHA_DIMMED;
         alpha = (alpha + (1.0f - alpha) * mNormalBackgroundVisibilityAmount);
         setOutlineAlpha(alpha);
-    }
-
-    @Override
-    public void setBelowSpeedBump(boolean below) {
-        NotificationIconContainerRefactor.assertInLegacyMode();
-        super.setBelowSpeedBump(below);
-        if (below != mIsBelowSpeedBump) {
-            mIsBelowSpeedBump = below;
-            updateBackgroundTint();
-        }
     }
 
     /**
